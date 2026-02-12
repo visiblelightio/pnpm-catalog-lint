@@ -89,7 +89,7 @@ jobs:
 
       - name: Package npm binary
         run: |
-          mkdir -p npm-pkg
+          mkdir -p npm-pkg/bin
           # Generate package.json from template
           sed \
             -e 's|${node_pkg}|${{ matrix.npm_pkg }}|g' \
@@ -100,9 +100,9 @@ jobs:
 
           # Copy binary
           if [ "${{ matrix.npm_os }}" = "win32" ]; then
-            cp target/${{ matrix.target }}/release/pnpm-catalog-lint.exe npm-pkg/
+            cp target/${{ matrix.target }}/release/pnpm-catalog-lint.exe npm-pkg/bin/
           else
-            cp target/${{ matrix.target }}/release/pnpm-catalog-lint npm-pkg/
+            cp target/${{ matrix.target }}/release/pnpm-catalog-lint npm-pkg/bin/
           fi
         shell: bash
 
