@@ -1,0 +1,7 @@
+{
+  "name": "app-a",
+  "dependencies": {
+    "react": "^18.2.0",
+    "lodash": "catalog:"
+  }
+}

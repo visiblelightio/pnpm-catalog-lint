@@ -1,0 +1,29 @@
+{
+  "name": "@visiblelightio/pnpm-catalog-lint",
+  "version": "0.1.0",
+  "description": "Lint pnpm workspaces to enforce the catalog: protocol",
+  "license": "MIT",
+  "bin": {
+    "pnpm-catalog-lint": "./index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/visiblelightio/pnpm-catalog-lint.git"
+  },
+  "keywords": [
+    "pnpm",
+    "catalog",
+    "lint",
+    "monorepo"
+  ],
+  "optionalDependencies": {
+    "@visiblelightio/pnpm-catalog-lint-linux-x64": "0.1.0",
+    "@visiblelightio/pnpm-catalog-lint-linux-x64-musl": "0.1.0",
+    "@visiblelightio/pnpm-catalog-lint-linux-arm64": "0.1.0",
+    "@visiblelightio/pnpm-catalog-lint-linux-arm64-musl": "0.1.0",
+    "@visiblelightio/pnpm-catalog-lint-darwin-x64": "0.1.0",
+    "@visiblelightio/pnpm-catalog-lint-darwin-arm64": "0.1.0",
+    "@visiblelightio/pnpm-catalog-lint-windows-x64": "0.1.0",
+    "@visiblelightio/pnpm-catalog-lint-windows-arm64": "0.1.0"
+  }
+}

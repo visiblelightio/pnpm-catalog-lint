@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-x64"
+            npm_os: linux
+            npm_arch: x64
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-x64-musl"
+            npm_os: linux
+            npm_arch: x64
+            use_cross: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-arm64"
+            npm_os: linux
+            npm_arch: arm64
+            use_cross: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-arm64-musl"
+            npm_os: linux
+            npm_arch: arm64
+            use_cross: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-darwin-x64"
+            npm_os: darwin
+            npm_arch: x64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-darwin-arm64"
+            npm_os: darwin
+            npm_arch: arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-windows-x64"
+            npm_os: win32
+            npm_arch: x64
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            npm_pkg: "@visiblelightio/pnpm-catalog-lint-windows-arm64"
+            npm_os: win32
+            npm_arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+        shell: bash
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Package npm binary
+        run: |
+          mkdir -p npm-pkg
+          # Generate package.json from template
+          sed \
+            -e 's/${node_pkg}/${{ matrix.npm_pkg }}/g' \
+            -e 's/${node_version}/${{ steps.version.outputs.version }}/g' \
+            -e 's/${node_os}/${{ matrix.npm_os }}/g' \
+            -e 's/${node_arch}/${{ matrix.npm_arch }}/g' \
+            npm/package.json.tmpl > npm-pkg/package.json
+
+          # Copy binary
+          if [ "${{ matrix.npm_os }}" = "win32" ]; then
+            cp target/${{ matrix.target }}/release/pnpm-catalog-lint.exe npm-pkg/
+          else
+            cp target/${{ matrix.target }}/release/pnpm-catalog-lint npm-pkg/
+          fi
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.target }}
+          path: npm-pkg/
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for dir in artifacts/npm-*/; do
+            echo "Publishing $(cat "$dir/package.json" | jq -r .name)..."
+            cd "$dir"
+            npm publish --access public
+            cd -
+          done
+
+      - name: Publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd npm/app
+          # Update version in package.json
+          jq --arg v "${{ steps.version.outputs.version }}" \
+            '.version = $v | .optionalDependencies |= with_entries(.value = $v)' \
+            package.json > package.json.tmp && mv package.json.tmp package.json
+          npm publish --access public
