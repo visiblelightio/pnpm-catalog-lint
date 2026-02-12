@@ -92,10 +92,10 @@ jobs:
           mkdir -p npm-pkg
           # Generate package.json from template
           sed \
-            -e 's/${node_pkg}/${{ matrix.npm_pkg }}/g' \
-            -e 's/${node_version}/${{ steps.version.outputs.version }}/g' \
-            -e 's/${node_os}/${{ matrix.npm_os }}/g' \
-            -e 's/${node_arch}/${{ matrix.npm_arch }}/g' \
+            -e 's|${node_pkg}|${{ matrix.npm_pkg }}|g' \
+            -e 's|${node_version}|${{ steps.version.outputs.version }}|g' \
+            -e 's|${node_os}|${{ matrix.npm_os }}|g' \
+            -e 's|${node_arch}|${{ matrix.npm_arch }}|g' \
             npm/package.json.tmpl > npm-pkg/package.json
 
           # Copy binary
