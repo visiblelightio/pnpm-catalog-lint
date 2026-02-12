@@ -1,5 +1,6 @@
 /.claude/settings.local.json
 /target
+/npm/app/package.json
 node_modules
 .DS_Store
 *.log
