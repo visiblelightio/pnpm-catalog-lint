@@ -1,55 +1,72 @@
 #!/usr/bin/env node
 
-const { existsSync } = require("fs");
-const os = require("os");
-const { join } = require("path");
-const { spawnSync } = require("child_process");
+const { spawnSync } = require('node:child_process')
+const fs = require('node:fs')
 
-function isMusl() {
-  return (
-    existsSync("/lib/ld-musl-x86_64.so.1") ||
-    existsSync("/lib/ld-musl-aarch64.so.1")
-  );
+/**
+ * Detects if the system is using musl libc (e.g., Alpine Linux)
+ */
+function isMusl(os) {
+  if (os !== 'linux') {
+    return false
+  }
+
+  // Check for musl dynamic linker
+  try {
+    return fs.existsSync('/lib/ld-musl-x86_64.so.1') ||
+           fs.existsSync('/lib/ld-musl-aarch64.so.1')
+  } catch (e) {
+    return false
+  }
 }
 
+/**
+ * Returns the executable path which is located inside `node_modules`
+ * The naming convention is app-${os}-${arch}[-musl]
+ * If the platform is `win32` or `cygwin`, executable will include a `.exe` extension.
+ * @see https://nodejs.org/api/os.html#osarch
+ * @see https://nodejs.org/api/os.html#osplatform
+ * @example "x/xx/node_modules/app-darwin-arm64"
+ */
 function getExePath() {
-  let platform = os.platform();
-  let arch = os.arch();
-
-  if (platform === "win32" || platform === "cygwin") {
-    platform = "windows";
+  const arch = process.arch
+  let os = process.platform
+  let extension = ""
+  if (['win32', 'cygwin'].includes(process.platform)) {
+    os = 'windows'
+    extension = '.exe'
   }
 
-  let libc = "";
-  if (platform === "linux" && isMusl()) {
-    libc = "-musl";
-  }
+  let npmPackageName = `@visiblelightio/pnpm-catalog-lint-${os}-${arch}`
 
-  const scope = "@visiblelightio";
-  const pkgName = `${scope}/pnpm-catalog-lint-${platform}-${arch}${libc}`;
-  const binName =
-    platform === "windows" ? "pnpm-catalog-lint.exe" : "pnpm-catalog-lint";
+  if (isMusl(os)) {
+    npmPackageName += '-musl'
+  }
 
   try {
-    return require.resolve(`${pkgName}/${binName}`);
-  } catch {
-    const localBin = join(__dirname, "..", "..", "target", "release", binName);
-    if (existsSync(localBin)) {
-      return localBin;
-    }
-
+    // Since the binary will be located inside `node_modules`, we can simply call `require.resolve`
+    return require.resolve(`${npmPackageName}/bin/pnpm-catalog-lint${extension}`)
+  } catch (e) {
     throw new Error(
-      `Unsupported platform: ${platform}-${arch}${libc}. ` +
-        `Please open an issue at https://github.com/visiblelightio/pnpm-catalog-lint/issues`
-    );
+      `Couldn't find application binary inside node_modules for ${npmPackageName}.`
+    )
   }
 }
 
+/**
+ * Runs the application with args using nodejs spawn
+ */
 function run() {
-  const exePath = getExePath();
-  const args = process.argv.slice(2);
-  const result = spawnSync(exePath, args, { stdio: "inherit" });
-  process.exit(result.status ?? 1);
+  const args = process.argv.slice(2)
+  const processResult = spawnSync(getExePath(), args, { stdio: 'inherit' })
+
+  if (processResult.error) {
+    console.error(`Failed to execute pnpm-catalog-lint: ${processResult.error.message}`)
+    console.error("Please report this issue: https://github.com/visiblelightio/pnpm-catalog-lint/issues")
+    process.exit(1)
+  }
+
+  process.exit(processResult.status ?? 0)
 }
 
-run();
+run()
