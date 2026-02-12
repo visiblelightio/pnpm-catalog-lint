@@ -6,6 +6,11 @@
   "bin": {
     "pnpm-catalog-lint": "index.js"
   },
+  "files": [
+    "index.js",
+    "README.md",
+    "package.json"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/visiblelightio/pnpm-catalog-lint.git"
@@ -25,14 +30,5 @@
     "@visiblelightio/pnpm-catalog-lint-darwin-arm64": "${node_version}",
     "@visiblelightio/pnpm-catalog-lint-windows-x64": "${node_version}",
     "@visiblelightio/pnpm-catalog-lint-windows-arm64": "${node_version}"
-  },
-  "release": {
-    "branches": [
-      "main"
-    ],
-    "plugins": [
-      "@semantic-release/commit-analyzer",
-      "@semantic-release/github"
-    ]
   }
 }
