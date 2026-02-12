@@ -6,151 +6,161 @@ on:
       - "v*.*.*"
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
+permissions:
+  contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
+  publish-npm-binaries:
+    name: Publish NPM binaries
+    runs-on: ${{ matrix.build.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-x64"
-            npm_os: linux
-            npm_arch: x64
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-x64-musl"
-            npm_os: linux
-            npm_arch: x64
-            use_cross: true
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-arm64"
-            npm_os: linux
-            npm_arch: arm64
-            use_cross: true
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-linux-arm64-musl"
-            npm_os: linux
-            npm_arch: arm64
-            use_cross: true
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-darwin-x64"
-            npm_os: darwin
-            npm_arch: x64
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-darwin-arm64"
-            npm_os: darwin
-            npm_arch: arm64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-windows-x64"
-            npm_os: win32
-            npm_arch: x64
-          - target: aarch64-pc-windows-msvc
-            os: windows-latest
-            npm_pkg: "@visiblelightio/pnpm-catalog-lint-windows-arm64"
-            npm_os: win32
-            npm_arch: arm64
-
+        build:
+          - {
+              NAME: linux-x64,
+              OS: ubuntu-24.04,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-unknown-linux-gnu,
+              BIN: pnpm-catalog-lint
+            }
+          - {
+              NAME: linux-x64-musl,
+              OS: ubuntu-24.04,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-unknown-linux-musl,
+              BIN: pnpm-catalog-lint
+            }
+          - {
+              NAME: linux-arm64,
+              OS: ubuntu-24.04,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-unknown-linux-gnu,
+              BIN: pnpm-catalog-lint
+            }
+          - {
+              NAME: linux-arm64-musl,
+              OS: ubuntu-24.04,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-unknown-linux-musl,
+              BIN: pnpm-catalog-lint
+            }
+          - {
+              NAME: win32-x64-msvc,
+              OS: windows-2025,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-pc-windows-msvc,
+              BIN: pnpm-catalog-lint.exe
+            }
+          - {
+              NAME: win32-arm64-msvc,
+              OS: windows-2025,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-pc-windows-msvc,
+              BIN: pnpm-catalog-lint.exe
+            }
+          - {
+              NAME: darwin-x64,
+              OS: macos-15-intel,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-apple-darwin,
+              BIN: pnpm-catalog-lint
+            }
+          - {
+              NAME: darwin-arm64,
+              OS: macos-15,
+              TOOLCHAIN: stable,
+              TARGET: aarch64-apple-darwin,
+              BIN: pnpm-catalog-lint
+            }
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set the release version
+        shell: bash
+        run: echo "RELEASE_VERSION=${GITHUB_REF:11}" >> $GITHUB_ENV
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
         with:
-          targets: ${{ matrix.target }}
-
-      - name: Install cross
-        if: matrix.use_cross
-        run: cargo install cross
+          toolchain: ${{ matrix.build.TOOLCHAIN }}
+          target: ${{ matrix.build.TARGET }}
+          override: true
 
       - name: Build
-        run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
-        shell: bash
-
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-        shell: bash
-
-      - name: Package npm binary
-        run: |
-          mkdir -p npm-pkg/bin
-          # Generate package.json from template
-          sed \
-            -e 's|${node_pkg}|${{ matrix.npm_pkg }}|g' \
-            -e 's|${node_version}|${{ steps.version.outputs.version }}|g' \
-            -e 's|${node_os}|${{ matrix.npm_os }}|g' \
-            -e 's|${node_arch}|${{ matrix.npm_arch }}|g' \
-            npm/package.json.tmpl > npm-pkg/package.json
-
-          # Copy binary
-          if [ "${{ matrix.npm_os }}" = "win32" ]; then
-            cp target/${{ matrix.target }}/release/pnpm-catalog-lint.exe npm-pkg/bin/
-          else
-            cp target/${{ matrix.target }}/release/pnpm-catalog-lint npm-pkg/bin/
-          fi
-        shell: bash
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.1
         with:
-          name: npm-${{ matrix.target }}
-          path: npm-pkg/
+          command: build
+          args: --release --locked --target ${{ matrix.build.TARGET }}
+          use-cross: ${{ matrix.build.OS == 'ubuntu-24.04' }} # use `cross` for Linux builds
 
-  publish:
-    name: Publish to npm
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      - name: Install node
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
+          registry-url: "https://registry.npmjs.org"
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          path: artifacts/
-
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-
-      - name: Publish platform packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to NPM
+        shell: bash
         run: |
-          for dir in artifacts/npm-*/; do
-            echo "Publishing $(cat "$dir/package.json" | jq -r .name)..."
-            cd "$dir"
-            npm publish --access public
-            cd -
-          done
-
-      - name: Publish main package
+          cd npm
+          # derive the OS and architecture from the build matrix name
+          # note: NAME format is either "os-arch" or "os-arch-variant" (e.g., linux-x64-musl)
+          node_os=$(echo "${{ matrix.build.NAME }}" | cut -d '-' -f1)
+          export node_os
+          node_arch=$(echo "${{ matrix.build.NAME }}" | cut -d '-' -f2)
+          export node_arch
+          node_variant=$(echo "${{ matrix.build.NAME }}" | cut -d '-' -f3)
+          export node_variant
+          # set the version
+          export node_version="${{ env.RELEASE_VERSION }}"
+          # set the package name
+          # note: use 'windows' as OS name instead of 'win32'
+          if [ "${{ matrix.build.OS }}" = "windows-2025" ]; then
+            export node_pkg="pnpm-catalog-lint-windows-${node_arch}"
+          elif [ -n "${node_variant}" ]; then
+            export node_pkg="pnpm-catalog-lint-${node_os}-${node_arch}-${node_variant}"
+          else
+            export node_pkg="pnpm-catalog-lint-${node_os}-${node_arch}"
+          fi
+          # create the package directory
+          mkdir -p "${node_pkg}/bin"
+          # generate package.json from the template
+          envsubst < package.json.tmpl > "${node_pkg}/package.json"
+          cp "../target/${{ matrix.build.TARGET }}/release/${{ matrix.build.BIN }}" "${node_pkg}/bin"
+          cp ../README.md "${node_pkg}"
+          # publish the package
+          cd "${node_pkg}"
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: pnpm-catalog-lint-${{ matrix.build.TARGET }}
+          path: target/${{ matrix.build.TARGET }}/release/${{ matrix.build.BIN }}
+
+  publish-npm-base:
+    name: Publish NPM package
+    needs: publish-npm-binaries
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install node
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish the package
+        shell: bash
         run: |
           cd npm/app
-          # Update version in package.json
-          jq --arg v "${{ steps.version.outputs.version }}" \
-            '.version = $v | .optionalDependencies |= with_entries(.value = $v)' \
-            package.json > package.json.tmp && mv package.json.tmp package.json
+          cp ../../README.md .
           npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
