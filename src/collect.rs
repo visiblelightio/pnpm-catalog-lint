@@ -234,7 +234,13 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let issues = collect_issues(&packages, &catalogs, &no_ignored(), &no_ignored(), &no_ignored());
+        let issues = collect_issues(
+            &packages,
+            &catalogs,
+            &no_ignored(),
+            &no_ignored(),
+            &no_ignored(),
+        );
 
         // Should report no-direct-version error but NOT unused-catalog-entry
         assert_eq!(issues.errors_count(), 1);
