@@ -17,6 +17,7 @@ indexmap = { version = "2.13.0", features = ["serde"] }
 
 [dev-dependencies]
 insta = "1.46.3"
+tempfile = "3.19.1"
 
 [profile.release]
 strip = true

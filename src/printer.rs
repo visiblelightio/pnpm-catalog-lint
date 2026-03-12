@@ -39,6 +39,14 @@ pub fn print_success() {
     println!("{}", "No issues found.".green().bold());
 }
 
+pub fn print_fixed(count: usize) {
+    let word = if count == 1 { "entry" } else { "entries" };
+    println!(
+        "{}",
+        format!("Fixed {count} unused catalog {word}.").green().bold(),
+    );
+}
+
 pub fn print_error(message: &str) {
     eprintln!("{} {message}", "error:".red().bold());
 }
