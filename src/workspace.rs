@@ -107,6 +107,241 @@ pub fn parse_workspace(root: &Path) -> Result<(PnpmWorkspaceYaml, WorkspaceCatal
     Ok((workspace, catalogs))
 }
 
+/// Extract the YAML key from a line like `  react: "^18.2.0"` or `  "@types/react": "^18.0.0"`.
+/// Returns `None` if the line doesn't look like a key-value pair at the expected indent.
+fn extract_yaml_key(line: &str, expected_indent: usize) -> Option<&str> {
+    // Check correct indentation
+    let spaces = line.len() - line.trim_start().len();
+    if spaces != expected_indent {
+        return None;
+    }
+
+    let trimmed = line.trim_start();
+
+    // Skip blank lines, comments, and section headers (lines ending with just `:` or `: `)
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    // Handle quoted keys: "key": value or 'key': value
+    if let Some(rest) = trimmed.strip_prefix('"') {
+        let end = rest.find('"')?;
+        let key = &rest[..end];
+        // Verify followed by `:`
+        if rest.as_bytes().get(end + 1) == Some(&b':') {
+            return Some(key);
+        }
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix('\'') {
+        let end = rest.find('\'')?;
+        let key = &rest[..end];
+        if rest.as_bytes().get(end + 1) == Some(&b':') {
+            return Some(key);
+        }
+        return None;
+    }
+
+    // Unquoted key: everything before the first `:`
+    let colon_pos = trimmed.find(':')?;
+    if colon_pos == 0 {
+        return None;
+    }
+    Some(&trimmed[..colon_pos])
+}
+
+#[derive(Debug, PartialEq)]
+enum YamlSection {
+    Other,
+    DefaultCatalog,
+    CatalogsHeader,
+    NamedCatalog(String),
+}
+
+/// Remove unused catalog entries from `pnpm-workspace.yaml` using line-based editing.
+/// Returns the number of entries removed.
+pub fn remove_catalog_entries(root: &Path, entries: &[CatalogEntry]) -> Result<usize> {
+    let yaml_path = root.join("pnpm-workspace.yaml");
+    let content = std::fs::read_to_string(&yaml_path)
+        .with_context(|| format!("Failed to read {}", yaml_path.display()))?;
+
+    let line_ending = if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let lines: Vec<&str> = content.split('\n').collect();
+
+    // Build a set for quick lookup
+    let to_remove: HashSet<&CatalogEntry> = entries.iter().collect();
+
+    // First pass: identify section context and mark lines for removal
+    let mut remove_lines: HashSet<usize> = HashSet::new();
+    let mut section = YamlSection::Other;
+    let mut removed_count = 0;
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_end_matches('\r');
+
+        // Detect top-level section transitions (zero indent, non-blank)
+        if !trimmed.is_empty() && !trimmed.starts_with(' ') && !trimmed.starts_with('#') {
+            if trimmed == "catalog:"
+                || trimmed.starts_with("catalog:") && trimmed[8..].trim().is_empty()
+            {
+                section = YamlSection::DefaultCatalog;
+                continue;
+            } else if trimmed == "catalogs:"
+                || trimmed.starts_with("catalogs:") && trimmed[9..].trim().is_empty()
+            {
+                section = YamlSection::CatalogsHeader;
+                continue;
+            } else {
+                section = YamlSection::Other;
+                continue;
+            }
+        }
+
+        match &section {
+            YamlSection::DefaultCatalog => {
+                if let Some(key) = extract_yaml_key(trimmed, 2) {
+                    let entry = CatalogEntry {
+                        catalog_name: None,
+                        dependency_name: key.to_string(),
+                    };
+                    if to_remove.contains(&entry) {
+                        remove_lines.insert(i);
+                        removed_count += 1;
+                    }
+                }
+            }
+            YamlSection::CatalogsHeader => {
+                // Check for named catalog header at indent 2, e.g. `  react16:`
+                if let Some(key) = extract_yaml_key(trimmed, 2) {
+                    // This is a named catalog header — but extract_yaml_key looks for `key: value`
+                    // Named catalog headers are `name:` followed by children. Check if it's a section header.
+                    section = YamlSection::NamedCatalog(key.to_string());
+                }
+            }
+            YamlSection::NamedCatalog(catalog_name) => {
+                // Entries at indent 4
+                if let Some(key) = extract_yaml_key(trimmed, 4) {
+                    let entry = CatalogEntry {
+                        catalog_name: Some(catalog_name.clone()),
+                        dependency_name: key.to_string(),
+                    };
+                    if to_remove.contains(&entry) {
+                        remove_lines.insert(i);
+                        removed_count += 1;
+                    }
+                } else if let Some(_key) = extract_yaml_key(trimmed, 2) {
+                    // New named catalog section at indent 2
+                    section = YamlSection::NamedCatalog(_key.to_string());
+                }
+            }
+            YamlSection::Other => {}
+        }
+    }
+
+    if removed_count == 0 {
+        return Ok(0);
+    }
+
+    // Second pass: detect empty section headers to remove
+    // Check if `catalog:` section is now empty
+    let mut catalog_header_line = None;
+    let mut catalog_has_remaining = false;
+    let mut catalogs_header_line = None;
+    let mut named_catalog_headers: Vec<(usize, String)> = Vec::new();
+    let mut named_catalog_has_remaining: HashSet<String> = HashSet::new();
+
+    section = YamlSection::Other;
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_end_matches('\r');
+
+        if !trimmed.is_empty() && !trimmed.starts_with(' ') && !trimmed.starts_with('#') {
+            if trimmed == "catalog:"
+                || trimmed.starts_with("catalog:") && trimmed[8..].trim().is_empty()
+            {
+                section = YamlSection::DefaultCatalog;
+                catalog_header_line = Some(i);
+                continue;
+            } else if trimmed == "catalogs:"
+                || trimmed.starts_with("catalogs:") && trimmed[9..].trim().is_empty()
+            {
+                section = YamlSection::CatalogsHeader;
+                catalogs_header_line = Some(i);
+                continue;
+            } else {
+                section = YamlSection::Other;
+                continue;
+            }
+        }
+
+        match &section {
+            YamlSection::DefaultCatalog => {
+                if extract_yaml_key(trimmed, 2).is_some() && !remove_lines.contains(&i) {
+                    catalog_has_remaining = true;
+                }
+            }
+            YamlSection::CatalogsHeader => {
+                if let Some(key) = extract_yaml_key(trimmed, 2) {
+                    named_catalog_headers.push((i, key.to_string()));
+                    section = YamlSection::NamedCatalog(key.to_string());
+                }
+            }
+            YamlSection::NamedCatalog(catalog_name) => {
+                if let Some(key) = extract_yaml_key(trimmed, 4) {
+                    if !remove_lines.contains(&i) {
+                        named_catalog_has_remaining.insert(catalog_name.clone());
+                    }
+                    let _ = key;
+                } else if let Some(key) = extract_yaml_key(trimmed, 2) {
+                    named_catalog_headers.push((i, key.to_string()));
+                    section = YamlSection::NamedCatalog(key.to_string());
+                }
+            }
+            YamlSection::Other => {}
+        }
+    }
+
+    // Remove empty catalog: header
+    if !catalog_has_remaining {
+        remove_lines.extend(catalog_header_line);
+    }
+
+    // Remove empty named catalog headers
+    for (line_idx, name) in &named_catalog_headers {
+        if !named_catalog_has_remaining.contains(name) {
+            remove_lines.insert(*line_idx);
+        }
+    }
+
+    // Remove catalogs: header if all named catalogs are empty
+    if !named_catalog_headers.is_empty() && named_catalog_has_remaining.is_empty() {
+        remove_lines.extend(catalogs_header_line);
+    }
+
+    // Build output, skipping removed lines
+    let result: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !remove_lines.contains(i))
+        .map(|(_, line)| *line)
+        .collect();
+
+    let mut output = result.join("\n");
+
+    // Normalize line endings if the original used \r\n
+    if line_ending == "\r\n" {
+        output = output.replace('\n', "\r\n");
+    }
+
+    std::fs::write(&yaml_path, &output)
+        .with_context(|| format!("Failed to write {}", yaml_path.display()))?;
+
+    Ok(removed_count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +446,179 @@ packages:
         assert!(!catalogs.has_default_entry("anything"));
         assert!(catalogs.all_entries().is_empty());
         assert!(catalogs.find_dependency("react").is_empty());
+    }
+
+    #[test]
+    fn extract_yaml_key_unquoted() {
+        assert_eq!(extract_yaml_key("  react: \"^18.2.0\"", 2), Some("react"));
+        assert_eq!(
+            extract_yaml_key("    lodash: \"^4.0.0\"", 4),
+            Some("lodash")
+        );
+        assert_eq!(
+            extract_yaml_key("  @types/react: \"^18.0.0\"", 2),
+            Some("@types/react")
+        );
+    }
+
+    #[test]
+    fn extract_yaml_key_quoted() {
+        assert_eq!(
+            extract_yaml_key("  \"@scope/pkg\": \"^1.0.0\"", 2),
+            Some("@scope/pkg")
+        );
+        assert_eq!(
+            extract_yaml_key("  '@scope/pkg': \"^1.0.0\"", 2),
+            Some("@scope/pkg")
+        );
+    }
+
+    #[test]
+    fn extract_yaml_key_wrong_indent() {
+        assert_eq!(extract_yaml_key("    react: \"^18.2.0\"", 2), None);
+        assert_eq!(extract_yaml_key("react: \"^18.2.0\"", 2), None);
+    }
+
+    #[test]
+    fn extract_yaml_key_not_a_kv() {
+        assert_eq!(extract_yaml_key("  # comment", 2), None);
+        assert_eq!(extract_yaml_key("", 2), None);
+        assert_eq!(extract_yaml_key("  ", 2), None);
+    }
+
+    fn write_temp_yaml(content: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let yaml_path = dir.path().join("pnpm-workspace.yaml");
+        std::fs::write(&yaml_path, content).unwrap();
+        (dir, yaml_path)
+    }
+
+    #[test]
+    fn remove_default_catalog_entry() {
+        let yaml = "packages:\n  - \"packages/*\"\n\ncatalog:\n  react: \"^18.2.0\"\n  lodash: \"^4.17.21\"\n";
+        let (dir, yaml_path) = write_temp_yaml(yaml);
+
+        let entries = vec![CatalogEntry {
+            catalog_name: None,
+            dependency_name: "lodash".to_string(),
+        }];
+
+        let count = remove_catalog_entries(dir.path(), &entries).unwrap();
+        assert_eq!(count, 1);
+
+        let result = std::fs::read_to_string(&yaml_path).unwrap();
+        assert!(result.contains("react: \"^18.2.0\""));
+        assert!(!result.contains("lodash"));
+        assert!(result.contains("catalog:"));
+    }
+
+    #[test]
+    fn remove_all_default_entries_removes_header() {
+        let yaml = "packages:\n  - \"packages/*\"\n\ncatalog:\n  lodash: \"^4.17.21\"\n";
+        let (dir, yaml_path) = write_temp_yaml(yaml);
+
+        let entries = vec![CatalogEntry {
+            catalog_name: None,
+            dependency_name: "lodash".to_string(),
+        }];
+
+        let count = remove_catalog_entries(dir.path(), &entries).unwrap();
+        assert_eq!(count, 1);
+
+        let result = std::fs::read_to_string(&yaml_path).unwrap();
+        assert!(!result.contains("catalog:"));
+        assert!(result.contains("packages:"));
+    }
+
+    #[test]
+    fn remove_named_catalog_entry() {
+        let yaml = "catalogs:\n  legacy:\n    react: \"^16.0.0\"\n    jquery: \"^3.6.0\"\n";
+        let (dir, yaml_path) = write_temp_yaml(yaml);
+
+        let entries = vec![CatalogEntry {
+            catalog_name: Some("legacy".to_string()),
+            dependency_name: "jquery".to_string(),
+        }];
+
+        let count = remove_catalog_entries(dir.path(), &entries).unwrap();
+        assert_eq!(count, 1);
+
+        let result = std::fs::read_to_string(&yaml_path).unwrap();
+        assert!(result.contains("react: \"^16.0.0\""));
+        assert!(!result.contains("jquery"));
+        assert!(result.contains("catalogs:"));
+        assert!(result.contains("legacy:"));
+    }
+
+    #[test]
+    fn remove_all_named_entries_removes_headers() {
+        let yaml = "catalogs:\n  legacy:\n    jquery: \"^3.6.0\"\n";
+        let (dir, yaml_path) = write_temp_yaml(yaml);
+
+        let entries = vec![CatalogEntry {
+            catalog_name: Some("legacy".to_string()),
+            dependency_name: "jquery".to_string(),
+        }];
+
+        let count = remove_catalog_entries(dir.path(), &entries).unwrap();
+        assert_eq!(count, 1);
+
+        let result = std::fs::read_to_string(&yaml_path).unwrap();
+        assert!(!result.contains("catalogs:"));
+        assert!(!result.contains("legacy:"));
+        assert!(!result.contains("jquery"));
+    }
+
+    #[test]
+    fn remove_scoped_package() {
+        let yaml = "catalog:\n  \"@types/react\": \"^18.0.0\"\n  react: \"^18.2.0\"\n";
+        let (dir, yaml_path) = write_temp_yaml(yaml);
+
+        let entries = vec![CatalogEntry {
+            catalog_name: None,
+            dependency_name: "@types/react".to_string(),
+        }];
+
+        let count = remove_catalog_entries(dir.path(), &entries).unwrap();
+        assert_eq!(count, 1);
+
+        let result = std::fs::read_to_string(&yaml_path).unwrap();
+        assert!(!result.contains("@types/react"));
+        assert!(result.contains("react: \"^18.2.0\""));
+    }
+
+    #[test]
+    fn remove_nothing_when_no_match() {
+        let yaml = "catalog:\n  react: \"^18.2.0\"\n";
+        let (dir, _yaml_path) = write_temp_yaml(yaml);
+
+        let entries = vec![CatalogEntry {
+            catalog_name: None,
+            dependency_name: "lodash".to_string(),
+        }];
+
+        let count = remove_catalog_entries(dir.path(), &entries).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn preserves_comments_and_other_sections() {
+        let yaml = "# workspace config\npackages:\n  - \"packages/*\"\n\ncatalog:\n  react: \"^18.2.0\"\n  # keep lodash\n  lodash: \"^4.17.21\"\n  leftpad: \"^1.0.0\"\n";
+        let (dir, yaml_path) = write_temp_yaml(yaml);
+
+        let entries = vec![CatalogEntry {
+            catalog_name: None,
+            dependency_name: "leftpad".to_string(),
+        }];
+
+        let count = remove_catalog_entries(dir.path(), &entries).unwrap();
+        assert_eq!(count, 1);
+
+        let result = std::fs::read_to_string(&yaml_path).unwrap();
+        assert!(result.contains("# workspace config"));
+        assert!(result.contains("# keep lodash"));
+        assert!(result.contains("react: \"^18.2.0\""));
+        assert!(result.contains("lodash: \"^4.17.21\""));
+        assert!(!result.contains("leftpad"));
     }
 }

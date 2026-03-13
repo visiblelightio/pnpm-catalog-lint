@@ -38,7 +38,7 @@ fn main() {
         }
     };
 
-    let issues = collect::collect_issues(
+    let (mut issues, unused_entries) = collect::collect_issues(
         &packages,
         &catalogs,
         &args.ignore_rules,
@@ -46,10 +46,24 @@ fn main() {
         &args.ignore_dependencies,
     );
 
+    if args.fix && !unused_entries.is_empty() {
+        match workspace::remove_catalog_entries(&root, &unused_entries) {
+            Ok(count) => {
+                printer::print_fixed(count);
+                issues.remove_by_rule("unused-catalog-entry");
+            }
+            Err(e) => {
+                printer::print_error(&format!("Failed to fix: {e:#}"));
+            }
+        }
+    }
+
     let duration = start.elapsed();
 
     if issues.is_empty() {
-        printer::print_success();
+        if !args.fix {
+            printer::print_success();
+        }
         process::exit(0);
     }
 

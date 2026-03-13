@@ -23,6 +23,10 @@ pub struct Args {
     #[arg(long = "ignore-dependency")]
     pub ignore_dependencies: Vec<String>,
 
+    /// Automatically fix issues (currently supports unused-catalog-entry)
+    #[arg(long)]
+    pub fix: bool,
+
     /// Exit with non-zero code on warnings
     #[arg(long)]
     pub fail_on_warnings: bool,

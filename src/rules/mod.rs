@@ -64,6 +64,10 @@ impl IssuesList {
             .count()
     }
 
+    pub fn remove_by_rule(&mut self, rule_name: &str) {
+        self.issues.retain(|(_, issue)| issue.name() != rule_name);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.issues.is_empty()
     }
