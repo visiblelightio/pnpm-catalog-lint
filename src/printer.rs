@@ -43,7 +43,9 @@ pub fn print_fixed(count: usize) {
     let word = if count == 1 { "entry" } else { "entries" };
     println!(
         "{}",
-        format!("Fixed {count} unused catalog {word}.").green().bold(),
+        format!("Fixed {count} unused catalog {word}.")
+            .green()
+            .bold(),
     );
 }
 

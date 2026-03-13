@@ -173,11 +173,12 @@ pub fn collect_issues(
     }
 
     // Collect unused entries before emitting warnings
-    let unused_entries: Vec<CatalogEntry> = if ignored_rules.iter().any(|r| r == "unused-catalog-entry") {
-        Vec::new()
-    } else {
-        used_entries.iter().cloned().collect()
-    };
+    let unused_entries: Vec<CatalogEntry> =
+        if ignored_rules.iter().any(|r| r == "unused-catalog-entry") {
+            Vec::new()
+        } else {
+            used_entries.iter().cloned().collect()
+        };
 
     // Emit unused catalog entry warnings
     for entry in &used_entries {

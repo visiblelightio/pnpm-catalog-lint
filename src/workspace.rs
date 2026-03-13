@@ -124,19 +124,19 @@ fn extract_yaml_key(line: &str, expected_indent: usize) -> Option<&str> {
     }
 
     // Handle quoted keys: "key": value or 'key': value
-    if trimmed.starts_with('"') {
-        let end = trimmed[1..].find('"')?;
-        let key = &trimmed[1..end + 1];
+    if let Some(rest) = trimmed.strip_prefix('"') {
+        let end = rest.find('"')?;
+        let key = &rest[..end];
         // Verify followed by `:`
-        if trimmed.as_bytes().get(end + 2) == Some(&b':') {
+        if rest.as_bytes().get(end + 1) == Some(&b':') {
             return Some(key);
         }
         return None;
     }
-    if trimmed.starts_with('\'') {
-        let end = trimmed[1..].find('\'')?;
-        let key = &trimmed[1..end + 1];
-        if trimmed.as_bytes().get(end + 2) == Some(&b':') {
+    if let Some(rest) = trimmed.strip_prefix('\'') {
+        let end = rest.find('\'')?;
+        let key = &rest[..end];
+        if rest.as_bytes().get(end + 1) == Some(&b':') {
             return Some(key);
         }
         return None;
@@ -165,7 +165,11 @@ pub fn remove_catalog_entries(root: &Path, entries: &[CatalogEntry]) -> Result<u
     let content = std::fs::read_to_string(&yaml_path)
         .with_context(|| format!("Failed to read {}", yaml_path.display()))?;
 
-    let line_ending = if content.contains("\r\n") { "\r\n" } else { "\n" };
+    let line_ending = if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let lines: Vec<&str> = content.split('\n').collect();
 
     // Build a set for quick lookup
@@ -181,10 +185,14 @@ pub fn remove_catalog_entries(root: &Path, entries: &[CatalogEntry]) -> Result<u
 
         // Detect top-level section transitions (zero indent, non-blank)
         if !trimmed.is_empty() && !trimmed.starts_with(' ') && !trimmed.starts_with('#') {
-            if trimmed == "catalog:" || trimmed.starts_with("catalog:") && trimmed[8..].trim().is_empty() {
+            if trimmed == "catalog:"
+                || trimmed.starts_with("catalog:") && trimmed[8..].trim().is_empty()
+            {
                 section = YamlSection::DefaultCatalog;
                 continue;
-            } else if trimmed == "catalogs:" || trimmed.starts_with("catalogs:") && trimmed[9..].trim().is_empty() {
+            } else if trimmed == "catalogs:"
+                || trimmed.starts_with("catalogs:") && trimmed[9..].trim().is_empty()
+            {
                 section = YamlSection::CatalogsHeader;
                 continue;
             } else {
@@ -251,11 +259,15 @@ pub fn remove_catalog_entries(root: &Path, entries: &[CatalogEntry]) -> Result<u
         let trimmed = line.trim_end_matches('\r');
 
         if !trimmed.is_empty() && !trimmed.starts_with(' ') && !trimmed.starts_with('#') {
-            if trimmed == "catalog:" || trimmed.starts_with("catalog:") && trimmed[8..].trim().is_empty() {
+            if trimmed == "catalog:"
+                || trimmed.starts_with("catalog:") && trimmed[8..].trim().is_empty()
+            {
                 section = YamlSection::DefaultCatalog;
                 catalog_header_line = Some(i);
                 continue;
-            } else if trimmed == "catalogs:" || trimmed.starts_with("catalogs:") && trimmed[9..].trim().is_empty() {
+            } else if trimmed == "catalogs:"
+                || trimmed.starts_with("catalogs:") && trimmed[9..].trim().is_empty()
+            {
                 section = YamlSection::CatalogsHeader;
                 catalogs_header_line = Some(i);
                 continue;
@@ -294,9 +306,7 @@ pub fn remove_catalog_entries(root: &Path, entries: &[CatalogEntry]) -> Result<u
 
     // Remove empty catalog: header
     if !catalog_has_remaining {
-        if let Some(line_idx) = catalog_header_line {
-            remove_lines.insert(line_idx);
-        }
+        remove_lines.extend(catalog_header_line);
     }
 
     // Remove empty named catalog headers
@@ -307,12 +317,8 @@ pub fn remove_catalog_entries(root: &Path, entries: &[CatalogEntry]) -> Result<u
     }
 
     // Remove catalogs: header if all named catalogs are empty
-    if !named_catalog_headers.is_empty()
-        && named_catalog_has_remaining.is_empty()
-    {
-        if let Some(line_idx) = catalogs_header_line {
-            remove_lines.insert(line_idx);
-        }
+    if !named_catalog_headers.is_empty() && named_catalog_has_remaining.is_empty() {
+        remove_lines.extend(catalogs_header_line);
     }
 
     // Build output, skipping removed lines
@@ -445,14 +451,26 @@ packages:
     #[test]
     fn extract_yaml_key_unquoted() {
         assert_eq!(extract_yaml_key("  react: \"^18.2.0\"", 2), Some("react"));
-        assert_eq!(extract_yaml_key("    lodash: \"^4.0.0\"", 4), Some("lodash"));
-        assert_eq!(extract_yaml_key("  @types/react: \"^18.0.0\"", 2), Some("@types/react"));
+        assert_eq!(
+            extract_yaml_key("    lodash: \"^4.0.0\"", 4),
+            Some("lodash")
+        );
+        assert_eq!(
+            extract_yaml_key("  @types/react: \"^18.0.0\"", 2),
+            Some("@types/react")
+        );
     }
 
     #[test]
     fn extract_yaml_key_quoted() {
-        assert_eq!(extract_yaml_key("  \"@scope/pkg\": \"^1.0.0\"", 2), Some("@scope/pkg"));
-        assert_eq!(extract_yaml_key("  '@scope/pkg': \"^1.0.0\"", 2), Some("@scope/pkg"));
+        assert_eq!(
+            extract_yaml_key("  \"@scope/pkg\": \"^1.0.0\"", 2),
+            Some("@scope/pkg")
+        );
+        assert_eq!(
+            extract_yaml_key("  '@scope/pkg': \"^1.0.0\"", 2),
+            Some("@scope/pkg")
+        );
     }
 
     #[test]
