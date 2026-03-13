@@ -96,7 +96,7 @@ jobs:
           use-cross: ${{ matrix.build.OS == 'ubuntu-24.04' }} # use `cross` for Linux builds
 
       - name: Install node
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "lts/*"
           registry-url: "https://registry.npmjs.org"
@@ -155,7 +155,7 @@ jobs:
         run: echo "RELEASE_VERSION=${GITHUB_REF:11}" >> $GITHUB_ENV
 
       - name: Install node
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "lts/*"
           registry-url: "https://registry.npmjs.org"
