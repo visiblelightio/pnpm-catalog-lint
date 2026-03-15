@@ -80,13 +80,11 @@ pub fn collect_issues(
             crate::packages::PackageType::Root => "(root)".to_string(),
             crate::packages::PackageType::Workspace(name) => name.clone(),
         };
-        if ignored_packages.iter().any(|p| p == &pkg_name) {
-            continue;
-        }
+        let is_ignored = ignored_packages.iter().any(|p| p == &pkg_name);
 
         for dep in pkg.all_dependencies() {
             // Check if this dependency should be ignored
-            if ignored_dependencies.iter().any(|d| d == &dep.name) {
+            if !is_ignored && ignored_dependencies.iter().any(|d| d == &dep.name) {
                 continue;
             }
 
@@ -102,7 +100,7 @@ pub fn collect_issues(
                                 used_entries.retain(|e| {
                                     !(e.catalog_name.is_none() && e.dependency_name == dep.name)
                                 });
-                            } else {
+                            } else if !is_ignored {
                                 issues.add(
                                     pkg.package_type.clone(),
                                     Box::new(CatalogEntryExistsIssue {
@@ -117,22 +115,24 @@ pub fn collect_issues(
                         Some(name) => {
                             // Named catalog reference
                             if !catalogs.has_catalog(name) {
-                                issues.add(
-                                    pkg.package_type.clone(),
-                                    Box::new(CatalogEntryExistsIssue {
-                                        dependency_name: dep.name.clone(),
-                                        catalog_ref: dep.version.clone(),
-                                        kind: dep.kind,
-                                        missing: MissingCatalog::NamedCatalog(name.clone()),
-                                    }),
-                                );
+                                if !is_ignored {
+                                    issues.add(
+                                        pkg.package_type.clone(),
+                                        Box::new(CatalogEntryExistsIssue {
+                                            dependency_name: dep.name.clone(),
+                                            catalog_ref: dep.version.clone(),
+                                            kind: dep.kind,
+                                            missing: MissingCatalog::NamedCatalog(name.clone()),
+                                        }),
+                                    );
+                                }
                             } else if catalogs.has_named_entry(name, &dep.name) {
                                 // Mark as used
                                 used_entries.retain(|e| {
                                     !(e.catalog_name.as_deref() == Some(name)
                                         && e.dependency_name == dep.name)
                                 });
-                            } else {
+                            } else if !is_ignored {
                                 issues.add(
                                     pkg.package_type.clone(),
                                     Box::new(CatalogEntryExistsIssue {
@@ -158,15 +158,17 @@ pub fn collect_issues(
                         });
                     }
 
-                    issues.add(
-                        pkg.package_type.clone(),
-                        Box::new(NoDirectVersionIssue {
-                            dependency_name: dep.name.clone(),
-                            version: dep.version.clone(),
-                            kind: dep.kind,
-                            available_in: found_in,
-                        }),
-                    );
+                    if !is_ignored {
+                        issues.add(
+                            pkg.package_type.clone(),
+                            Box::new(NoDirectVersionIssue {
+                                dependency_name: dep.name.clone(),
+                                version: dep.version.clone(),
+                                kind: dep.kind,
+                                available_in: found_in,
+                            }),
+                        );
+                    }
                 }
             }
         }
@@ -292,6 +294,29 @@ mod tests {
         assert_eq!(unused.len(), 1);
         assert_eq!(unused[0].dependency_name, "lodash");
         assert_eq!(unused[0].catalog_name, None);
+    }
+
+    #[test]
+    fn ignored_package_deps_still_mark_catalog_entries_as_used() {
+        let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
+        let packages = vec![
+            make_package("app", vec![("react", "catalog:")]),
+            make_package("ignored-pkg", vec![("lodash", "catalog:")]),
+        ];
+
+        let (issues, unused) = collect_issues(
+            &packages,
+            &catalogs,
+            &no_ignored(),
+            &["ignored-pkg".to_string()],
+            &no_ignored(),
+        );
+
+        // lodash should NOT be reported as unused — ignored-pkg references it
+        assert!(unused.is_empty());
+        // No issues from ignored-pkg should be reported
+        assert_eq!(issues.errors_count(), 0);
+        assert_eq!(issues.warnings_count(), 0);
     }
 
     #[test]
