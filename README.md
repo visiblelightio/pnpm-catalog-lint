@@ -73,7 +73,8 @@ Arguments:
   [PATH]  Path to the workspace root [default: .]
 
 Options:
-  -i, --ignore-rule <RULE>          Rules to ignore (repeatable)
+      --exclude <RULE>              Rules to exclude (repeatable, conflicts with --only)
+      --only <RULE>                 Run only specified rules (repeatable, conflicts with --exclude)
       --ignore-package <PACKAGE>    Packages to ignore (repeatable)
       --ignore-dependency <DEP>     Dependencies to ignore (repeatable)
       --fail-on-warnings            Exit with non-zero code on warnings
@@ -83,10 +84,16 @@ Options:
 
 ### Examples
 
-Ignore a specific rule:
+Exclude a specific rule:
 
 ```sh
-pnpm-catalog-lint --ignore-rule unused-catalog-entry
+pnpm-catalog-lint --exclude unused-catalog-entry
+```
+
+Run only a specific rule:
+
+```sh
+pnpm-catalog-lint --only no-direct-version
 ```
 
 Ignore a package:
