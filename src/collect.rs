@@ -3,10 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::packages::{Package, is_catalog_ref, is_special_protocol, parse_catalog_ref};
-use crate::rules::{IssuesList, RuleFilter};
 use crate::rules::catalog_entry_exists::{CatalogEntryExistsIssue, MissingCatalog};
 use crate::rules::no_direct_version::NoDirectVersionIssue;
 use crate::rules::unused_catalog_entry::UnusedCatalogEntryIssue;
+use crate::rules::{IssuesList, RuleFilter};
 use crate::workspace::{CatalogEntry, PnpmWorkspaceYaml, WorkspaceCatalogs};
 
 pub fn collect_packages(root: &Path, workspace: &PnpmWorkspaceYaml) -> Result<Vec<Package>> {
@@ -175,12 +175,11 @@ pub fn collect_issues(
     }
 
     // Collect unused entries before emitting warnings
-    let unused_entries: Vec<CatalogEntry> =
-        if issues.is_rule_ignored("unused-catalog-entry") {
-            Vec::new()
-        } else {
-            used_entries.iter().cloned().collect()
-        };
+    let unused_entries: Vec<CatalogEntry> = if issues.is_rule_ignored("unused-catalog-entry") {
+        Vec::new()
+    } else {
+        used_entries.iter().cloned().collect()
+    };
 
     // Emit unused catalog entry warnings
     for entry in &used_entries {
