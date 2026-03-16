@@ -8,6 +8,22 @@ use colored::Colorize;
 
 use crate::packages::PackageType;
 
+pub enum RuleFilter {
+    None,
+    Exclude(Vec<String>),
+    Only(Vec<String>),
+}
+
+impl RuleFilter {
+    pub fn is_ignored(&self, rule_name: &str) -> bool {
+        match self {
+            RuleFilter::None => false,
+            RuleFilter::Exclude(rules) => rules.iter().any(|r| r == rule_name),
+            RuleFilter::Only(rules) => !rules.iter().any(|r| r == rule_name),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IssueLevel {
     Error,
@@ -33,19 +49,23 @@ pub trait Issue {
 
 pub struct IssuesList {
     issues: Vec<(PackageType, Box<dyn Issue>)>,
-    ignored_rules: Vec<String>,
+    rule_filter: RuleFilter,
 }
 
 impl IssuesList {
-    pub fn new(ignored_rules: Vec<String>) -> Self {
+    pub fn new(rule_filter: RuleFilter) -> Self {
         Self {
             issues: Vec::new(),
-            ignored_rules,
+            rule_filter,
         }
     }
 
+    pub fn is_rule_ignored(&self, rule_name: &str) -> bool {
+        self.rule_filter.is_ignored(rule_name)
+    }
+
     pub fn add(&mut self, package_type: PackageType, issue: Box<dyn Issue>) {
-        if !self.ignored_rules.contains(&issue.name().to_string()) {
+        if !self.rule_filter.is_ignored(issue.name()) {
             self.issues.push((package_type, issue));
         }
     }

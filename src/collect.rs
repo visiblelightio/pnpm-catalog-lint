@@ -3,10 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::packages::{Package, is_catalog_ref, is_special_protocol, parse_catalog_ref};
-use crate::rules::IssuesList;
 use crate::rules::catalog_entry_exists::{CatalogEntryExistsIssue, MissingCatalog};
 use crate::rules::no_direct_version::NoDirectVersionIssue;
 use crate::rules::unused_catalog_entry::UnusedCatalogEntryIssue;
+use crate::rules::{IssuesList, RuleFilter};
 use crate::workspace::{CatalogEntry, PnpmWorkspaceYaml, WorkspaceCatalogs};
 
 pub fn collect_packages(root: &Path, workspace: &PnpmWorkspaceYaml) -> Result<Vec<Package>> {
@@ -65,11 +65,11 @@ pub fn collect_packages(root: &Path, workspace: &PnpmWorkspaceYaml) -> Result<Ve
 pub fn collect_issues(
     packages: &[Package],
     catalogs: &WorkspaceCatalogs,
-    ignored_rules: &[String],
+    rule_filter: RuleFilter,
     ignored_packages: &[String],
     ignored_dependencies: &[String],
 ) -> (IssuesList, Vec<CatalogEntry>) {
-    let mut issues = IssuesList::new(ignored_rules.to_vec());
+    let mut issues = IssuesList::new(rule_filter);
 
     // Track used catalog entries for unused-catalog-entry rule
     let mut used_entries = catalogs.all_entries();
@@ -175,12 +175,11 @@ pub fn collect_issues(
     }
 
     // Collect unused entries before emitting warnings
-    let unused_entries: Vec<CatalogEntry> =
-        if ignored_rules.iter().any(|r| r == "unused-catalog-entry") {
-            Vec::new()
-        } else {
-            used_entries.iter().cloned().collect()
-        };
+    let unused_entries: Vec<CatalogEntry> = if issues.is_rule_ignored("unused-catalog-entry") {
+        Vec::new()
+    } else {
+        used_entries.iter().cloned().collect()
+    };
 
     // Emit unused catalog entry warnings
     for entry in &used_entries {
@@ -247,7 +246,7 @@ mod tests {
         let (issues, _unused) = collect_issues(
             &packages,
             &catalogs,
-            &no_ignored(),
+            RuleFilter::None,
             &no_ignored(),
             &no_ignored(),
         );
@@ -261,19 +260,19 @@ mod tests {
     }
 
     #[test]
-    fn direct_version_no_false_unused_when_rule_ignored() {
+    fn direct_version_no_false_unused_when_rule_excluded() {
         let catalogs = make_catalogs(vec![("react", "^18.2.0")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
         let (issues, _unused) = collect_issues(
             &packages,
             &catalogs,
-            &["no-direct-version".to_string()],
+            RuleFilter::Exclude(vec!["no-direct-version".to_string()]),
             &no_ignored(),
             &no_ignored(),
         );
 
-        // With no-direct-version ignored, there should be zero issues —
+        // With no-direct-version excluded, there should be zero issues —
         // the catalog entry is still considered used
         assert!(issues.is_empty());
     }
@@ -286,7 +285,7 @@ mod tests {
         let (_issues, unused) = collect_issues(
             &packages,
             &catalogs,
-            &no_ignored(),
+            RuleFilter::None,
             &no_ignored(),
             &no_ignored(),
         );
@@ -307,7 +306,7 @@ mod tests {
         let (issues, unused) = collect_issues(
             &packages,
             &catalogs,
-            &no_ignored(),
+            RuleFilter::None,
             &["ignored-pkg".to_string()],
             &no_ignored(),
         );
@@ -320,18 +319,58 @@ mod tests {
     }
 
     #[test]
-    fn unused_entries_empty_when_rule_ignored() {
+    fn unused_entries_empty_when_rule_excluded() {
         let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
         let packages = vec![make_package("app", vec![("react", "catalog:")])];
 
         let (_issues, unused) = collect_issues(
             &packages,
             &catalogs,
-            &["unused-catalog-entry".to_string()],
+            RuleFilter::Exclude(vec!["unused-catalog-entry".to_string()]),
             &no_ignored(),
             &no_ignored(),
         );
 
         assert!(unused.is_empty());
+    }
+
+    #[test]
+    fn only_runs_specified_rules() {
+        let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
+        let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
+
+        let (issues, _unused) = collect_issues(
+            &packages,
+            &catalogs,
+            RuleFilter::Only(vec!["no-direct-version".to_string()]),
+            &no_ignored(),
+            &no_ignored(),
+        );
+
+        // Only no-direct-version should be reported, unused-catalog-entry should be filtered
+        assert_eq!(issues.errors_count(), 1);
+        assert_eq!(issues.warnings_count(), 0);
+
+        let (_, issue) = issues.iter().next().unwrap();
+        assert_eq!(issue.name(), "no-direct-version");
+    }
+
+    #[test]
+    fn only_excludes_unspecified_rules() {
+        let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
+        let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
+
+        let (issues, unused) = collect_issues(
+            &packages,
+            &catalogs,
+            RuleFilter::Only(vec!["unused-catalog-entry".to_string()]),
+            &no_ignored(),
+            &no_ignored(),
+        );
+
+        // no-direct-version should be filtered out, only unused-catalog-entry should remain
+        assert_eq!(issues.errors_count(), 0);
+        assert_eq!(issues.warnings_count(), 1);
+        assert_eq!(unused.len(), 1);
     }
 }

@@ -41,7 +41,7 @@ fn main() {
     let (mut issues, unused_entries) = collect::collect_issues(
         &packages,
         &catalogs,
-        &args.ignore_rules,
+        args.rule_filter(),
         &args.ignore_packages,
         &args.ignore_dependencies,
     );
