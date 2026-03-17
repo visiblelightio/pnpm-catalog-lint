@@ -202,14 +202,14 @@ pub fn replace_versions(replacements: &[VersionReplacement]) -> Result<usize> {
         let mut count = 0;
         for rep in reps {
             let section_key = rep.kind.to_string();
-            if let Some(obj) = value.get_mut(&section_key).and_then(|v| v.as_object_mut()) {
-                if obj.contains_key(&rep.dependency_name) {
-                    obj.insert(
-                        rep.dependency_name.clone(),
-                        serde_json::Value::String(rep.catalog_ref.clone()),
-                    );
-                    count += 1;
-                }
+            if let Some(obj) = value.get_mut(&section_key).and_then(|v| v.as_object_mut())
+                && obj.contains_key(&rep.dependency_name)
+            {
+                obj.insert(
+                    rep.dependency_name.clone(),
+                    serde_json::Value::String(rep.catalog_ref.clone()),
+                );
+                count += 1;
             }
         }
 
