@@ -73,10 +73,12 @@ Arguments:
   [PATH]  Path to the workspace root [default: .]
 
 Options:
-      --exclude <RULE>              Rules to exclude (repeatable, conflicts with --only)
-      --only <RULE>                 Run only specified rules (repeatable, conflicts with --exclude)
-      --ignore-package <PACKAGE>    Packages to ignore (repeatable)
-      --ignore-dependency <DEP>     Dependencies to ignore (repeatable)
+      --exclude-rule <RULE>         Rules to exclude (repeatable, conflicts with --only-rule)
+      --only-rule <RULE>            Run only specified rules (repeatable, conflicts with --exclude-rule)
+      --exclude-package <PACKAGE>    Packages to exclude (repeatable, conflicts with --only-package)
+      --only-package <PACKAGE>      Run only on specified packages (repeatable, conflicts with --exclude-package)
+      --exclude-dependency <DEP>    Dependencies to exclude (repeatable, conflicts with --only-dependency)
+      --only-dependency <DEP>       Run only on specified dependencies (repeatable, conflicts with --exclude-dependency)
       --fail-on-warnings            Exit with non-zero code on warnings
   -h, --help                        Print help
   -V, --version                     Print version
@@ -87,25 +89,25 @@ Options:
 Exclude a specific rule:
 
 ```sh
-pnpm-catalog-lint --exclude unused-catalog-entry
+pnpm-catalog-lint --exclude-rule unused-catalog-entry
 ```
 
 Run only a specific rule:
 
 ```sh
-pnpm-catalog-lint --only no-direct-version
+pnpm-catalog-lint --only-rule no-direct-version
 ```
 
-Ignore a package:
+Exclude a package:
 
 ```sh
-pnpm-catalog-lint --ignore-package my-legacy-app
+pnpm-catalog-lint --exclude-package my-legacy-app
 ```
 
-Ignore a dependency:
+Exclude a dependency:
 
 ```sh
-pnpm-catalog-lint --ignore-dependency typescript
+pnpm-catalog-lint --exclude-dependency typescript
 ```
 
 Fail CI on warnings too:

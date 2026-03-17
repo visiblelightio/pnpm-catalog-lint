@@ -42,8 +42,8 @@ fn main() {
         &packages,
         &catalogs,
         args.rule_filter(),
-        &args.ignore_packages,
-        &args.ignore_dependencies,
+        &args.package_filter(),
+        &args.dependency_filter(),
     );
 
     if args.fix && !unused_entries.is_empty() {
