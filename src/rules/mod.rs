@@ -8,18 +8,18 @@ use colored::Colorize;
 
 use crate::packages::PackageType;
 
-pub enum RuleFilter {
+pub enum Filter {
     None,
     Exclude(Vec<String>),
     Only(Vec<String>),
 }
 
-impl RuleFilter {
+impl Filter {
     pub fn is_ignored(&self, rule_name: &str) -> bool {
         match self {
-            RuleFilter::None => false,
-            RuleFilter::Exclude(rules) => rules.iter().any(|r| r == rule_name),
-            RuleFilter::Only(rules) => !rules.iter().any(|r| r == rule_name),
+            Filter::None => false,
+            Filter::Exclude(rules) => rules.iter().any(|r| r == rule_name),
+            Filter::Only(rules) => !rules.iter().any(|r| r == rule_name),
         }
     }
 }
@@ -49,11 +49,11 @@ pub trait Issue {
 
 pub struct IssuesList {
     issues: Vec<(PackageType, Box<dyn Issue>)>,
-    rule_filter: RuleFilter,
+    rule_filter: Filter,
 }
 
 impl IssuesList {
-    pub fn new(rule_filter: RuleFilter) -> Self {
+    pub fn new(rule_filter: Filter) -> Self {
         Self {
             issues: Vec::new(),
             rule_filter,

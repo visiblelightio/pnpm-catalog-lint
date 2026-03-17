@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::rules::RuleFilter;
+use crate::rules::Filter;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -14,20 +14,28 @@ pub struct Args {
     pub path: String,
 
     /// Rules to exclude (can be specified multiple times)
-    #[arg(long, conflicts_with = "only")]
-    pub exclude: Vec<String>,
+    #[arg(long = "exclude-rule", conflicts_with = "only_rules")]
+    pub exclude_rules: Vec<String>,
 
     /// Run only specified rules (can be specified multiple times)
-    #[arg(long, conflicts_with = "exclude")]
-    pub only: Vec<String>,
+    #[arg(long = "only-rule", conflicts_with = "exclude_rules")]
+    pub only_rules: Vec<String>,
 
-    /// Packages to ignore (can be specified multiple times)
-    #[arg(long = "ignore-package")]
-    pub ignore_packages: Vec<String>,
+    /// Packages to exclude (can be specified multiple times)
+    #[arg(long = "exclude-package", conflicts_with = "only_packages")]
+    pub exclude_packages: Vec<String>,
 
-    /// Dependencies to ignore (can be specified multiple times)
-    #[arg(long = "ignore-dependency")]
-    pub ignore_dependencies: Vec<String>,
+    /// Run only on specified packages (can be specified multiple times)
+    #[arg(long = "only-package", conflicts_with = "exclude_packages")]
+    pub only_packages: Vec<String>,
+
+    /// Dependencies to exclude (can be specified multiple times)
+    #[arg(long = "exclude-dependency", conflicts_with = "only_dependencies")]
+    pub exclude_dependencies: Vec<String>,
+
+    /// Run only on specified dependencies (can be specified multiple times)
+    #[arg(long = "only-dependency", conflicts_with = "exclude_dependencies")]
+    pub only_dependencies: Vec<String>,
 
     /// Automatically fix issues (currently supports unused-catalog-entry)
     #[arg(long)]
@@ -39,13 +47,33 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn rule_filter(&self) -> RuleFilter {
-        if !self.only.is_empty() {
-            RuleFilter::Only(self.only.clone())
-        } else if !self.exclude.is_empty() {
-            RuleFilter::Exclude(self.exclude.clone())
+    pub fn rule_filter(&self) -> Filter {
+        if !self.only_rules.is_empty() {
+            Filter::Only(self.only_rules.clone())
+        } else if !self.exclude_rules.is_empty() {
+            Filter::Exclude(self.exclude_rules.clone())
         } else {
-            RuleFilter::None
+            Filter::None
+        }
+    }
+
+    pub fn package_filter(&self) -> Filter {
+        if !self.only_packages.is_empty() {
+            Filter::Only(self.only_packages.clone())
+        } else if !self.exclude_packages.is_empty() {
+            Filter::Exclude(self.exclude_packages.clone())
+        } else {
+            Filter::None
+        }
+    }
+
+    pub fn dependency_filter(&self) -> Filter {
+        if !self.only_dependencies.is_empty() {
+            Filter::Only(self.only_dependencies.clone())
+        } else if !self.exclude_dependencies.is_empty() {
+            Filter::Exclude(self.exclude_dependencies.clone())
+        } else {
+            Filter::None
         }
     }
 }
