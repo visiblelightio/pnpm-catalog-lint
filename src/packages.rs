@@ -202,10 +202,7 @@ pub fn replace_versions(replacements: &[VersionReplacement]) -> Result<usize> {
         let mut count = 0;
         for rep in reps {
             let section_key = rep.kind.to_string();
-            if let Some(obj) = value
-                .get_mut(&section_key)
-                .and_then(|v| v.as_object_mut())
-            {
+            if let Some(obj) = value.get_mut(&section_key).and_then(|v| v.as_object_mut()) {
                 if obj.contains_key(&rep.dependency_name) {
                     obj.insert(
                         rep.dependency_name.clone(),
@@ -220,13 +217,12 @@ pub fn replace_versions(replacements: &[VersionReplacement]) -> Result<usize> {
             let formatter = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
             let mut buf = Vec::new();
             let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
-            value.serialize(&mut ser).with_context(|| {
-                format!("Failed to serialize {}", pkg_path.display())
-            })?;
+            value
+                .serialize(&mut ser)
+                .with_context(|| format!("Failed to serialize {}", pkg_path.display()))?;
 
-            let mut output = String::from_utf8(buf).with_context(|| {
-                format!("Invalid UTF-8 in serialized {}", pkg_path.display())
-            })?;
+            let mut output = String::from_utf8(buf)
+                .with_context(|| format!("Invalid UTF-8 in serialized {}", pkg_path.display()))?;
 
             if has_trailing_newline && !output.ends_with('\n') {
                 output.push('\n');
