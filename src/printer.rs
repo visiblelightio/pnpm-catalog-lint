@@ -49,6 +49,20 @@ pub fn print_fixed(count: usize) {
     );
 }
 
+pub fn print_fixed_versions(count: usize) {
+    let word = if count == 1 {
+        "dependency"
+    } else {
+        "dependencies"
+    };
+    println!(
+        "{}",
+        format!("Fixed {count} {word} to use catalog: protocol.")
+            .green()
+            .bold(),
+    );
+}
+
 pub fn print_error(message: &str) {
     eprintln!("{} {message}", "error:".red().bold());
 }

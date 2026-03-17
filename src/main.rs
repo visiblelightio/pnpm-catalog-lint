@@ -38,13 +38,25 @@ fn main() {
         }
     };
 
-    let (mut issues, unused_entries) = collect::collect_issues(
+    let (mut issues, unused_entries, version_replacements) = collect::collect_issues(
         &packages,
         &catalogs,
         args.rule_filter(),
         &args.package_filter(),
         &args.dependency_filter(),
     );
+
+    if args.fix && !version_replacements.is_empty() {
+        match packages::replace_versions(&version_replacements) {
+            Ok(count) => {
+                printer::print_fixed_versions(count);
+                issues.remove_by_rule("no-direct-version");
+            }
+            Err(e) => {
+                printer::print_error(&format!("Failed to fix: {e:#}"));
+            }
+        }
+    }
 
     if args.fix && !unused_entries.is_empty() {
         match workspace::remove_catalog_entries(&root, &unused_entries) {

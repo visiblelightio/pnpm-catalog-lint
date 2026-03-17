@@ -37,7 +37,7 @@ pub struct Args {
     #[arg(long = "only-dependency", conflicts_with = "exclude_dependencies")]
     pub only_dependencies: Vec<String>,
 
-    /// Automatically fix issues (currently supports unused-catalog-entry)
+    /// Automatically fix issues (supports no-direct-version and unused-catalog-entry)
     #[arg(long)]
     pub fix: bool,
 
