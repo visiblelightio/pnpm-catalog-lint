@@ -402,17 +402,18 @@ pub fn add_catalog_entries(
             } else {
                 // Also detect tab-based indent
                 let stripped = line.trim_end_matches('\r');
-                if stripped.starts_with('\t') {
-                    if let Some(key) = stripped.trim_start().split(':').next() {
-                        let key = key.trim_matches('"').trim_matches('\'');
-                        if !key.is_empty() && !key.starts_with('#') {
-                            if existing_keys.is_empty() {
-                                let tab_count = stripped.len() - stripped.trim_start_matches('\t').len();
-                                indent = "\t".repeat(tab_count);
-                            }
-                            existing_keys.push(key.to_string());
-                            catalog_end = i + 1;
+                if stripped.starts_with('\t')
+                    && let Some(key) = stripped.trim_start().split(':').next()
+                {
+                    let key = key.trim_matches('"').trim_matches('\'');
+                    if !key.is_empty() && !key.starts_with('#') {
+                        if existing_keys.is_empty() {
+                            let tab_count =
+                                stripped.len() - stripped.trim_start_matches('\t').len();
+                            indent = "\t".repeat(tab_count);
                         }
+                        existing_keys.push(key.to_string());
+                        catalog_end = i + 1;
                     }
                 }
             }
@@ -486,10 +487,10 @@ pub fn add_catalog_entries(
     } else {
         // No catalog: section exists — append one at the end
         // Add a blank line separator if the file doesn't end with one
-        if let Some(last) = result_lines.last() {
-            if !last.trim_end_matches('\r').is_empty() {
-                result_lines.push(String::new());
-            }
+        if let Some(last) = result_lines.last()
+            && !last.trim_end_matches('\r').is_empty()
+        {
+            result_lines.push(String::new());
         }
         result_lines.push("catalog:".to_string());
 

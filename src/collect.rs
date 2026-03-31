@@ -253,41 +253,40 @@ pub fn collect_issues(
 
     // Deduplicate catalog additions: same dep+version → 1 addition, N replacements.
     // If versions conflict for the same dep → skip entirely (not auto-fixable).
-    let (catalog_additions, catalog_addition_replacements) =
-        if issues.is_rule_ignored("no-uncataloged-dependency") {
-            (Vec::new(), Vec::new())
-        } else {
-            let mut seen: HashMap<String, String> = HashMap::new();
-            let mut conflicting: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            for (addition, _) in &catalog_additions_raw {
-                match seen.entry(addition.dependency_name.clone()) {
-                    std::collections::hash_map::Entry::Vacant(e) => {
-                        e.insert(addition.version.clone());
-                    }
-                    std::collections::hash_map::Entry::Occupied(e) => {
-                        if e.get() != &addition.version {
-                            conflicting.insert(addition.dependency_name.clone());
-                        }
+    let (catalog_additions, catalog_addition_replacements) = if issues
+        .is_rule_ignored("no-uncataloged-dependency")
+    {
+        (Vec::new(), Vec::new())
+    } else {
+        let mut seen: HashMap<String, String> = HashMap::new();
+        let mut conflicting: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (addition, _) in &catalog_additions_raw {
+            match seen.entry(addition.dependency_name.clone()) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(addition.version.clone());
+                }
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    if e.get() != &addition.version {
+                        conflicting.insert(addition.dependency_name.clone());
                     }
                 }
             }
+        }
 
-            let mut additions = Vec::new();
-            let mut replacements = Vec::new();
-            let mut added_deps: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            for (addition, replacement) in catalog_additions_raw {
-                if conflicting.contains(&addition.dependency_name) {
-                    continue;
-                }
-                replacements.push(replacement);
-                if added_deps.insert(addition.dependency_name.clone()) {
-                    additions.push(addition);
-                }
+        let mut additions = Vec::new();
+        let mut replacements = Vec::new();
+        let mut added_deps: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (addition, replacement) in catalog_additions_raw {
+            if conflicting.contains(&addition.dependency_name) {
+                continue;
             }
-            (additions, replacements)
-        };
+            replacements.push(replacement);
+            if added_deps.insert(addition.dependency_name.clone()) {
+                additions.push(addition);
+            }
+        }
+        (additions, replacements)
+    };
 
     // Emit unused catalog entry warnings
     for entry in &used_entries {
@@ -606,9 +605,7 @@ mod tests {
         );
 
         // Should only have no-direct-version, not no-uncataloged-dependency
-        assert!(issues
-            .iter()
-            .all(|(_, i)| i.name() == "no-direct-version"));
+        assert!(issues.iter().all(|(_, i)| i.name() == "no-direct-version"));
     }
 
     #[test]
@@ -679,10 +676,7 @@ mod tests {
         assert_eq!(fix.catalog_additions[0].dependency_name, "lodash");
         assert_eq!(fix.catalog_additions[0].version, "^4.17.21");
         assert_eq!(fix.catalog_addition_replacements.len(), 1);
-        assert_eq!(
-            fix.catalog_addition_replacements[0].catalog_ref,
-            "catalog:"
-        );
+        assert_eq!(fix.catalog_addition_replacements[0].catalog_ref, "catalog:");
     }
 
     #[test]
