@@ -38,7 +38,7 @@ fn main() {
         }
     };
 
-    let (mut issues, unused_entries, version_replacements) = collect::collect_issues(
+    let (mut issues, fix) = collect::collect_issues(
         &packages,
         &catalogs,
         args.rule_filter(),
@@ -46,8 +46,25 @@ fn main() {
         &args.dependency_filter(),
     );
 
-    if args.fix && !version_replacements.is_empty() {
-        match packages::replace_versions(&version_replacements) {
+    if args.fix && !fix.catalog_additions.is_empty() {
+        match workspace::add_catalog_entries(&root, &fix.catalog_additions) {
+            Ok(added) => match packages::replace_versions(&fix.catalog_addition_replacements) {
+                Ok(replaced) => {
+                    printer::print_fixed_catalog_additions(added, replaced);
+                    issues.remove_by_rule("no-uncataloged-dependency");
+                }
+                Err(e) => {
+                    printer::print_error(&format!("Failed to fix: {e:#}"));
+                }
+            },
+            Err(e) => {
+                printer::print_error(&format!("Failed to fix: {e:#}"));
+            }
+        }
+    }
+
+    if args.fix && !fix.version_replacements.is_empty() {
+        match packages::replace_versions(&fix.version_replacements) {
             Ok(count) => {
                 printer::print_fixed_versions(count);
                 issues.remove_by_rule("no-direct-version");
@@ -58,8 +75,8 @@ fn main() {
         }
     }
 
-    if args.fix && !unused_entries.is_empty() {
-        match workspace::remove_catalog_entries(&root, &unused_entries) {
+    if args.fix && !fix.unused_entries.is_empty() {
+        match workspace::remove_catalog_entries(&root, &fix.unused_entries) {
             Ok(count) => {
                 printer::print_fixed(count);
                 issues.remove_by_rule("unused-catalog-entry");

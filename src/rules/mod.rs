@@ -1,5 +1,6 @@
 pub mod catalog_entry_exists;
 pub mod no_direct_version;
+pub mod no_uncataloged_dependency;
 pub mod unused_catalog_entry;
 
 use std::fmt;

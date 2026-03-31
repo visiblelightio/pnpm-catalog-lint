@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -7,6 +8,7 @@ use crate::packages::{
 };
 use crate::rules::catalog_entry_exists::{CatalogEntryExistsIssue, MissingCatalog};
 use crate::rules::no_direct_version::NoDirectVersionIssue;
+use crate::rules::no_uncataloged_dependency::NoUncatalogedDependencyIssue;
 use crate::rules::unused_catalog_entry::UnusedCatalogEntryIssue;
 use crate::rules::{Filter, IssuesList};
 use crate::workspace::{CatalogEntry, PnpmWorkspaceYaml, WorkspaceCatalogs};
@@ -18,6 +20,21 @@ pub struct VersionReplacement {
     pub dependency_name: String,
     pub kind: DependencyKind,
     pub catalog_ref: String,
+}
+
+/// Describes a new entry to add to the default catalog for fixing no-uncataloged-dependency.
+#[derive(Debug, Clone)]
+pub struct CatalogAddition {
+    pub dependency_name: String,
+    pub version: String,
+}
+
+/// All fix-related data returned alongside issues.
+pub struct FixActions {
+    pub unused_entries: Vec<CatalogEntry>,
+    pub version_replacements: Vec<VersionReplacement>,
+    pub catalog_additions: Vec<CatalogAddition>,
+    pub catalog_addition_replacements: Vec<VersionReplacement>,
 }
 
 pub fn collect_packages(root: &Path, workspace: &PnpmWorkspaceYaml) -> Result<Vec<Package>> {
@@ -79,9 +96,10 @@ pub fn collect_issues(
     rule_filter: Filter,
     package_filter: &Filter,
     dependency_filter: &Filter,
-) -> (IssuesList, Vec<CatalogEntry>, Vec<VersionReplacement>) {
+) -> (IssuesList, FixActions) {
     let mut issues = IssuesList::new(rule_filter);
     let mut version_replacements = Vec::new();
+    let mut catalog_additions_raw: Vec<(CatalogAddition, VersionReplacement)> = Vec::new();
 
     // Track used catalog entries for unused-catalog-entry rule
     let mut used_entries = catalogs.all_entries();
@@ -193,6 +211,27 @@ pub fn collect_issues(
                             }),
                         );
                     }
+                } else if !is_ignored {
+                    issues.add(
+                        pkg.package_type.clone(),
+                        Box::new(NoUncatalogedDependencyIssue {
+                            dependency_name: dep.name.clone(),
+                            version: dep.version.clone(),
+                            kind: dep.kind,
+                        }),
+                    );
+                    catalog_additions_raw.push((
+                        CatalogAddition {
+                            dependency_name: dep.name.clone(),
+                            version: dep.version.clone(),
+                        },
+                        VersionReplacement {
+                            package_path: pkg.path.clone(),
+                            dependency_name: dep.name.clone(),
+                            kind: dep.kind,
+                            catalog_ref: "catalog:".to_string(),
+                        },
+                    ));
                 }
             }
         }
@@ -212,6 +251,44 @@ pub fn collect_issues(
         version_replacements
     };
 
+    // Deduplicate catalog additions: same dep+version → 1 addition, N replacements.
+    // If versions conflict for the same dep → skip entirely (not auto-fixable).
+    let (catalog_additions, catalog_addition_replacements) =
+        if issues.is_rule_ignored("no-uncataloged-dependency") {
+            (Vec::new(), Vec::new())
+        } else {
+            let mut seen: HashMap<String, String> = HashMap::new();
+            let mut conflicting: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for (addition, _) in &catalog_additions_raw {
+                match seen.entry(addition.dependency_name.clone()) {
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(addition.version.clone());
+                    }
+                    std::collections::hash_map::Entry::Occupied(e) => {
+                        if e.get() != &addition.version {
+                            conflicting.insert(addition.dependency_name.clone());
+                        }
+                    }
+                }
+            }
+
+            let mut additions = Vec::new();
+            let mut replacements = Vec::new();
+            let mut added_deps: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for (addition, replacement) in catalog_additions_raw {
+                if conflicting.contains(&addition.dependency_name) {
+                    continue;
+                }
+                replacements.push(replacement);
+                if added_deps.insert(addition.dependency_name.clone()) {
+                    additions.push(addition);
+                }
+            }
+            (additions, replacements)
+        };
+
     // Emit unused catalog entry warnings
     for entry in &used_entries {
         if let Some(version) = catalogs.get_version(entry) {
@@ -226,7 +303,15 @@ pub fn collect_issues(
         }
     }
 
-    (issues, unused_entries, version_replacements)
+    (
+        issues,
+        FixActions {
+            unused_entries,
+            version_replacements,
+            catalog_additions,
+            catalog_addition_replacements,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -270,7 +355,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let (issues, _unused, _replacements) = collect_issues(
+        let (issues, _fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::None,
@@ -291,7 +376,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let (issues, _unused, _replacements) = collect_issues(
+        let (issues, _fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::Exclude(vec!["no-direct-version".to_string()]),
@@ -309,7 +394,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
         let packages = vec![make_package("app", vec![("react", "catalog:")])];
 
-        let (_issues, unused, _replacements) = collect_issues(
+        let (_issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::None,
@@ -317,9 +402,9 @@ mod tests {
             &Filter::None,
         );
 
-        assert_eq!(unused.len(), 1);
-        assert_eq!(unused[0].dependency_name, "lodash");
-        assert_eq!(unused[0].catalog_name, None);
+        assert_eq!(fix.unused_entries.len(), 1);
+        assert_eq!(fix.unused_entries[0].dependency_name, "lodash");
+        assert_eq!(fix.unused_entries[0].catalog_name, None);
     }
 
     #[test]
@@ -330,7 +415,7 @@ mod tests {
             make_package("excluded-pkg", vec![("lodash", "catalog:")]),
         ];
 
-        let (issues, unused, _replacements) = collect_issues(
+        let (issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::None,
@@ -339,7 +424,7 @@ mod tests {
         );
 
         // lodash should NOT be reported as unused — excluded-pkg references it
-        assert!(unused.is_empty());
+        assert!(fix.unused_entries.is_empty());
         // No issues from excluded-pkg should be reported
         assert_eq!(issues.errors_count(), 0);
         assert_eq!(issues.warnings_count(), 0);
@@ -350,7 +435,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
         let packages = vec![make_package("app", vec![("react", "catalog:")])];
 
-        let (_issues, unused, _replacements) = collect_issues(
+        let (_issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::Exclude(vec!["unused-catalog-entry".to_string()]),
@@ -358,7 +443,7 @@ mod tests {
             &Filter::None,
         );
 
-        assert!(unused.is_empty());
+        assert!(fix.unused_entries.is_empty());
     }
 
     #[test]
@@ -366,7 +451,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let (issues, _unused, _replacements) = collect_issues(
+        let (issues, _fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::Only(vec!["no-direct-version".to_string()]),
@@ -387,7 +472,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0"), ("lodash", "^4.17.21")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let (issues, unused, _replacements) = collect_issues(
+        let (issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::Only(vec!["unused-catalog-entry".to_string()]),
@@ -398,7 +483,7 @@ mod tests {
         // no-direct-version should be filtered out, only unused-catalog-entry should remain
         assert_eq!(issues.errors_count(), 0);
         assert_eq!(issues.warnings_count(), 1);
-        assert_eq!(unused.len(), 1);
+        assert_eq!(fix.unused_entries.len(), 1);
     }
 
     #[test]
@@ -406,7 +491,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let (_issues, _unused, replacements) = collect_issues(
+        let (_issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::None,
@@ -414,9 +499,9 @@ mod tests {
             &Filter::None,
         );
 
-        assert_eq!(replacements.len(), 1);
-        assert_eq!(replacements[0].dependency_name, "react");
-        assert_eq!(replacements[0].catalog_ref, "catalog:");
+        assert_eq!(fix.version_replacements.len(), 1);
+        assert_eq!(fix.version_replacements[0].dependency_name, "react");
+        assert_eq!(fix.version_replacements[0].catalog_ref, "catalog:");
     }
 
     #[test]
@@ -436,7 +521,7 @@ mod tests {
         };
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let (_issues, _unused, replacements) = collect_issues(
+        let (_issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::None,
@@ -444,8 +529,8 @@ mod tests {
             &Filter::None,
         );
 
-        assert_eq!(replacements.len(), 1);
-        assert_eq!(replacements[0].catalog_ref, "catalog:");
+        assert_eq!(fix.version_replacements.len(), 1);
+        assert_eq!(fix.version_replacements[0].catalog_ref, "catalog:");
     }
 
     #[test]
@@ -461,7 +546,7 @@ mod tests {
         };
         let packages = vec![make_package("app", vec![("react", "^16.0.0")])];
 
-        let (_issues, _unused, replacements) = collect_issues(
+        let (_issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::None,
@@ -469,8 +554,8 @@ mod tests {
             &Filter::None,
         );
 
-        assert_eq!(replacements.len(), 1);
-        assert_eq!(replacements[0].catalog_ref, "catalog:legacy");
+        assert_eq!(fix.version_replacements.len(), 1);
+        assert_eq!(fix.version_replacements[0].catalog_ref, "catalog:legacy");
     }
 
     #[test]
@@ -478,7 +563,7 @@ mod tests {
         let catalogs = make_catalogs(vec![("react", "^18.2.0")]);
         let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
 
-        let (_issues, _unused, replacements) = collect_issues(
+        let (_issues, fix) = collect_issues(
             &packages,
             &catalogs,
             Filter::Exclude(vec!["no-direct-version".to_string()]),
@@ -486,6 +571,176 @@ mod tests {
             &Filter::None,
         );
 
-        assert!(replacements.is_empty());
+        assert!(fix.version_replacements.is_empty());
+    }
+
+    #[test]
+    fn uncataloged_dependency_detected() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![make_package("app", vec![("lodash", "^4.17.21")])];
+
+        let (issues, _fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::None,
+            &Filter::None,
+            &Filter::None,
+        );
+
+        assert_eq!(issues.warnings_count(), 1);
+        let (_, issue) = issues.iter().next().unwrap();
+        assert_eq!(issue.name(), "no-uncataloged-dependency");
+    }
+
+    #[test]
+    fn uncataloged_dependency_skipped_when_in_catalog() {
+        let catalogs = make_catalogs(vec![("react", "^18.2.0")]);
+        let packages = vec![make_package("app", vec![("react", "^18.2.0")])];
+
+        let (issues, _fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::None,
+            &Filter::None,
+            &Filter::None,
+        );
+
+        // Should only have no-direct-version, not no-uncataloged-dependency
+        assert!(issues
+            .iter()
+            .all(|(_, i)| i.name() == "no-direct-version"));
+    }
+
+    #[test]
+    fn uncataloged_dependency_skipped_for_special_protocols() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![make_package(
+            "app",
+            vec![("my-lib", "workspace:*"), ("my-link", "link:../lib")],
+        )];
+
+        let (issues, _fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::None,
+            &Filter::None,
+            &Filter::None,
+        );
+
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn uncataloged_dependency_respects_rule_exclusion() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![make_package("app", vec![("lodash", "^4.17.21")])];
+
+        let (issues, _fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::Exclude(vec!["no-uncataloged-dependency".to_string()]),
+            &Filter::None,
+            &Filter::None,
+        );
+
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn uncataloged_dependency_respects_dependency_filter() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![make_package("app", vec![("lodash", "^4.17.21")])];
+
+        let (issues, _fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::None,
+            &Filter::None,
+            &Filter::Exclude(vec!["lodash".to_string()]),
+        );
+
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn uncataloged_fix_collects_catalog_additions() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![make_package("app", vec![("lodash", "^4.17.21")])];
+
+        let (_issues, fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::None,
+            &Filter::None,
+            &Filter::None,
+        );
+
+        assert_eq!(fix.catalog_additions.len(), 1);
+        assert_eq!(fix.catalog_additions[0].dependency_name, "lodash");
+        assert_eq!(fix.catalog_additions[0].version, "^4.17.21");
+        assert_eq!(fix.catalog_addition_replacements.len(), 1);
+        assert_eq!(
+            fix.catalog_addition_replacements[0].catalog_ref,
+            "catalog:"
+        );
+    }
+
+    #[test]
+    fn uncataloged_fix_deduplicates_same_version() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![
+            make_package("app-a", vec![("lodash", "^4.17.21")]),
+            make_package("app-b", vec![("lodash", "^4.17.21")]),
+        ];
+
+        let (_issues, fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::None,
+            &Filter::None,
+            &Filter::None,
+        );
+
+        // 1 catalog addition, 2 version replacements
+        assert_eq!(fix.catalog_additions.len(), 1);
+        assert_eq!(fix.catalog_addition_replacements.len(), 2);
+    }
+
+    #[test]
+    fn uncataloged_fix_skips_conflicting_versions() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![
+            make_package("app-a", vec![("lodash", "^4.17.21")]),
+            make_package("app-b", vec![("lodash", "^4.17.20")]),
+        ];
+
+        let (_issues, fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::None,
+            &Filter::None,
+            &Filter::None,
+        );
+
+        // Conflicting versions — skip fix entirely for this dep
+        assert!(fix.catalog_additions.is_empty());
+        assert!(fix.catalog_addition_replacements.is_empty());
+    }
+
+    #[test]
+    fn uncataloged_fix_empty_when_rule_excluded() {
+        let catalogs = make_catalogs(vec![]);
+        let packages = vec![make_package("app", vec![("lodash", "^4.17.21")])];
+
+        let (_issues, fix) = collect_issues(
+            &packages,
+            &catalogs,
+            Filter::Exclude(vec!["no-uncataloged-dependency".to_string()]),
+            &Filter::None,
+            &Filter::None,
+        );
+
+        assert!(fix.catalog_additions.is_empty());
+        assert!(fix.catalog_addition_replacements.is_empty());
     }
 }

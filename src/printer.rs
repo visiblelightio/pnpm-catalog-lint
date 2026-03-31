@@ -63,6 +63,21 @@ pub fn print_fixed_versions(count: usize) {
     );
 }
 
+pub fn print_fixed_catalog_additions(added: usize, replaced: usize) {
+    let entry_word = if added == 1 { "entry" } else { "entries" };
+    let dep_word = if replaced == 1 {
+        "dependency"
+    } else {
+        "dependencies"
+    };
+    println!(
+        "{}",
+        format!("Added {added} catalog {entry_word}, fixed {replaced} {dep_word} to use catalog: protocol.")
+            .green()
+            .bold(),
+    );
+}
+
 pub fn print_error(message: &str) {
     eprintln!("{} {message}", "error:".red().bold());
 }
