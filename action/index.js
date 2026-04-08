@@ -26,7 +26,6 @@ var __toESM$1 = (mod, isNodeMode, target) => (target = mod != null ? __create$1(
 //#endregion
 const os = __toESM$1(require("os"));
 const fs = __toESM$1(require("fs"));
-const path = __toESM$1(require("path"));
 const fs_promises = __toESM$1(require("fs/promises"));
 
 //#region ../node_modules/@actions/core/lib/utils.js
@@ -34154,7 +34153,7 @@ async function run() {
 	try {
 		const version = import_core.getInput("version");
 		const token = import_core.getInput("github-token");
-		let additionalArgs = import_core.getInput("args");
+		const additionalArgs = import_core.getInput("args");
 		const octokit = import_github.getOctokit(token);
 		let releaseTag = version;
 		if (version === "latest") {
@@ -34208,7 +34207,6 @@ async function run() {
 		import_core.addPath(extractedPath);
 		import_core.setOutput("pnpm-catalog-lint-path", binaryPath);
 		import_core.info("pnpm-catalog-lint has been installed successfully");
-		if (!additionalArgs) additionalArgs = await getArgsFromPackageJson() || "";
 		const args = additionalArgs.split(" ").filter((arg) => arg !== "");
 		const options = {
 			ignoreReturnCode: true,
@@ -34222,20 +34220,6 @@ async function run() {
 	} catch (error$1) {
 		if (error$1 instanceof Error) import_core.setFailed(error$1.message);
 		else import_core.setFailed("An unexpected error occurred");
-	}
-}
-async function getArgsFromPackageJson() {
-	try {
-		const packageJsonFile = await fs_promises.readFile(path.resolve(process.cwd(), "package.json"));
-		const packageJson = JSON.parse(packageJsonFile.toString());
-		const regexResult = /pnpm-catalog-lint\s([^&&]*)/g.exec(packageJson.scripts["pnpm-catalog-lint"]);
-		if (regexResult && regexResult.length > 1) {
-			const args = regexResult[1];
-			import_core.info(`Using the arguments "${args}" from the root package.json`);
-			return args;
-		}
-	} catch {
-		import_core.info("Failed to extract args from package.json");
 	}
 }
 run();

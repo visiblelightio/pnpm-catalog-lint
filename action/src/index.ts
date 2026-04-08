@@ -3,7 +3,6 @@ import * as tc from '@actions/tool-cache';
 import * as github from '@actions/github';
 import * as exec from '@actions/exec';
 import * as os from 'os';
-import * as path from 'path';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 
@@ -11,7 +10,7 @@ async function run(): Promise<void> {
   try {
     const version = core.getInput('version');
     const token = core.getInput('github-token');
-    let additionalArgs = core.getInput('args');
+    const additionalArgs = core.getInput('args');
 
     const octokit = github.getOctokit(token);
 
@@ -103,9 +102,6 @@ async function run(): Promise<void> {
     core.setOutput('pnpm-catalog-lint-path', binaryPath);
     core.info('pnpm-catalog-lint has been installed successfully');
 
-    if (!additionalArgs) {
-      additionalArgs = (await getArgsFromPackageJson()) || '';
-    }
     const args = additionalArgs.split(' ').filter((arg) => arg !== '');
 
     const options: exec.ExecOptions = {
@@ -130,26 +126,6 @@ async function run(): Promise<void> {
     } else {
       core.setFailed('An unexpected error occurred');
     }
-  }
-}
-
-async function getArgsFromPackageJson(): Promise<string | undefined> {
-  try {
-    const packageJsonFile = await fsp.readFile(
-      path.resolve(process.cwd(), 'package.json'),
-    );
-    const packageJson = JSON.parse(packageJsonFile.toString());
-
-    const regexResult = /pnpm-catalog-lint\s([^&&]*)/g.exec(
-      packageJson.scripts['pnpm-catalog-lint'],
-    );
-    if (regexResult && regexResult.length > 1) {
-      const args = regexResult[1];
-      core.info(`Using the arguments "${args}" from the root package.json`);
-      return args;
-    }
-  } catch {
-    core.info('Failed to extract args from package.json');
   }
 }
 
