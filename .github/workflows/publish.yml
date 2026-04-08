@@ -142,6 +142,16 @@ jobs:
           name: pnpm-catalog-lint-${{ matrix.build.TARGET }}
           path: target/${{ matrix.build.TARGET }}/release/${{ matrix.build.BIN }}
 
+      - name: Upload Release Asset
+        shell: bash
+        run: |
+          zip -j pnpm-catalog-lint-${{ matrix.build.TARGET }}.zip \
+            target/${{ matrix.build.TARGET }}/release/${{ matrix.build.BIN }}
+          gh release upload ${{ github.event.release.tag_name }} \
+            pnpm-catalog-lint-${{ matrix.build.TARGET }}.zip --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   publish-npm-base:
     name: Publish NPM package
     needs: publish-npm-binaries
