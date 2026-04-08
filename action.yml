@@ -1,0 +1,25 @@
+name: 'Setup pnpm-catalog-lint'
+description: 'Setup and run pnpm-catalog-lint, a linter that enforces pnpm catalog: protocol usage'
+author: 'visiblelightio'
+
+inputs:
+  version:
+    description: 'The version to use (e.g., v0.6.0)'
+    required: false
+    default: 'latest'
+  github-token:
+    description: 'GitHub token for API requests'
+    required: false
+    default: ${{ github.token }}
+  args:
+    description: 'Additional arguments to pass to pnpm-catalog-lint'
+    required: false
+    default: ''
+
+runs:
+  using: 'node24'
+  main: 'action/index.js'
+
+branding:
+  icon: 'book'
+  color: 'orange'
