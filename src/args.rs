@@ -1,6 +1,13 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 use crate::rules::Filter;
+
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum OutputFormat {
+    #[default]
+    Text,
+    Json,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -44,6 +51,18 @@ pub struct Args {
     /// Exit with non-zero code on warnings
     #[arg(long)]
     pub fail_on_warnings: bool,
+
+    /// Output format
+    #[arg(long, value_enum, default_value_t)]
+    pub format: OutputFormat,
+
+    /// Disable colored output
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Suppress all output (exit code only)
+    #[arg(long, short)]
+    pub quiet: bool,
 }
 
 impl Args {
