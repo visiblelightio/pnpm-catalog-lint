@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use colored::Colorize;
+use serde::Serialize;
 
 use crate::packages::PackageType;
-use crate::rules::IssuesList;
+use crate::rules::{IssueLevel, IssuesList};
 
 pub fn print_issues(issues: &IssuesList) {
     // Group issues by package
@@ -107,4 +108,62 @@ pub fn print_footer(issues: &IssuesList, duration: Duration) {
         format!("{total} issue{}", if total == 1 { "" } else { "s" }).bold(),
         parts.join(", "),
     );
+}
+
+#[derive(Serialize)]
+struct JsonIssue {
+    package: String,
+    level: &'static str,
+    rule: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct JsonSummary {
+    total: usize,
+    errors: usize,
+    warnings: usize,
+    duration_ms: u128,
+}
+
+#[derive(Serialize)]
+struct JsonOutput {
+    issues: Vec<JsonIssue>,
+    summary: JsonSummary,
+}
+
+pub fn print_json(issues: &IssuesList, duration: Duration) {
+    let json_issues: Vec<JsonIssue> = issues
+        .iter()
+        .map(|(pkg_type, issue)| {
+            let package = match pkg_type {
+                PackageType::Root => "pnpm-workspace.yaml".to_string(),
+                PackageType::Workspace(name) => name.clone(),
+            };
+            JsonIssue {
+                package,
+                level: match issue.level() {
+                    IssueLevel::Error => "error",
+                    IssueLevel::Warning => "warning",
+                },
+                rule: issue.name().to_string(),
+                message: issue.message(),
+            }
+        })
+        .collect();
+
+    let errors = issues.errors_count();
+    let warnings = issues.warnings_count();
+
+    let output = JsonOutput {
+        issues: json_issues,
+        summary: JsonSummary {
+            total: errors + warnings,
+            errors,
+            warnings,
+            duration_ms: duration.as_millis(),
+        },
+    };
+
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
 }

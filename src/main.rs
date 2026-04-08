@@ -12,6 +12,14 @@ mod workspace;
 
 fn main() {
     let args = args::Args::parse();
+
+    if args.no_color {
+        colored::control::set_override(false);
+    }
+
+    let is_json = matches!(args.format, args::OutputFormat::Json);
+    let is_quiet = args.quiet;
+
     let start = Instant::now();
 
     let root = match std::path::Path::new(&args.path).canonicalize() {
@@ -50,7 +58,9 @@ fn main() {
         match workspace::add_catalog_entries(&root, &fix.catalog_additions) {
             Ok(added) => match packages::replace_versions(&fix.catalog_addition_replacements) {
                 Ok(replaced) => {
-                    printer::print_fixed_catalog_additions(added, replaced);
+                    if !is_quiet && !is_json {
+                        printer::print_fixed_catalog_additions(added, replaced);
+                    }
                     issues.remove_by_rule("no-uncataloged-dependency");
                 }
                 Err(e) => {
@@ -66,7 +76,9 @@ fn main() {
     if args.fix && !fix.version_replacements.is_empty() {
         match packages::replace_versions(&fix.version_replacements) {
             Ok(count) => {
-                printer::print_fixed_versions(count);
+                if !is_quiet && !is_json {
+                    printer::print_fixed_versions(count);
+                }
                 issues.remove_by_rule("no-direct-version");
             }
             Err(e) => {
@@ -78,7 +90,9 @@ fn main() {
     if args.fix && !fix.unused_entries.is_empty() {
         match workspace::remove_catalog_entries(&root, &fix.unused_entries) {
             Ok(count) => {
-                printer::print_fixed(count);
+                if !is_quiet && !is_json {
+                    printer::print_fixed(count);
+                }
                 issues.remove_by_rule("unused-catalog-entry");
             }
             Err(e) => {
@@ -90,14 +104,24 @@ fn main() {
     let duration = start.elapsed();
 
     if issues.is_empty() {
-        if !args.fix {
-            printer::print_success();
+        if !is_quiet {
+            if is_json {
+                printer::print_json(&issues, duration);
+            } else if !args.fix {
+                printer::print_success();
+            }
         }
         process::exit(0);
     }
 
-    printer::print_issues(&issues);
-    printer::print_footer(&issues, duration);
+    if !is_quiet {
+        if is_json {
+            printer::print_json(&issues, duration);
+        } else {
+            printer::print_issues(&issues);
+            printer::print_footer(&issues, duration);
+        }
+    }
 
     let has_errors = issues.errors_count() > 0;
     let has_failing_warnings = args.fail_on_warnings && issues.warnings_count() > 0;
