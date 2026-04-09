@@ -1,22 +1,22 @@
 {
   "private": true,
+  "type": "module",
   "scripts": {
     "build:action": "cd action && tsdown"
   },
-  "type": "module",
   "devDependencies": {
     "@actions/core": "1.11.1",
     "@actions/exec": "1.1.1",
     "@actions/github": "6.0.1",
     "@actions/tool-cache": "2.0.2",
-    "@types/node": "24.12.2",
-    "tsdown": "0.21.7",
-    "typescript": "5.9.3",
     "@semantic-release/commit-analyzer": "13.0.1",
     "@semantic-release/github": "12.0.6",
     "@semantic-release/release-notes-generator": "14.1.0",
+    "@types/node": "24.12.2",
     "conventional-changelog-conventionalcommits": "9.3.1",
-    "semantic-release": "25.0.3"
+    "semantic-release": "25.0.3",
+    "tsdown": "0.21.7",
+    "typescript": "5.9.3"
   },
   "release": {
     "branches": [

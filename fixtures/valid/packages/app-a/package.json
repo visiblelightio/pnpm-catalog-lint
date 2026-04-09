@@ -1,7 +1,7 @@
 {
   "name": "app-a",
   "dependencies": {
-    "react": "catalog:",
-    "lodash": "catalog:"
+    "lodash": "catalog:",
+    "react": "catalog:"
   }
 }

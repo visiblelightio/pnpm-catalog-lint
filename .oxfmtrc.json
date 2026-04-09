@@ -1,0 +1,11 @@
+{
+  "ignorePatterns": ["action/index.js"],
+  "overrides": [
+    {
+      "files": ["*.json", "*.yaml", "*.yml"],
+      "options": {
+        "trailingComma": "none"
+      }
+    }
+  ]
+}

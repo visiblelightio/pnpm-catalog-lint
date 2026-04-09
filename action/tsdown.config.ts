@@ -1,16 +1,16 @@
-import { defineConfig } from 'tsdown'
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ['./src/index.ts'],
+  entry: ["./src/index.ts"],
   clean: false,
-  outDir: './',
-  format: 'esm',
-  platform: 'node',
+  outDir: "./",
+  format: "esm",
+  platform: "node",
   outputOptions: {
-    entryFileNames: '[name].js',
+    entryFileNames: "[name].js",
   },
   deps: {
     alwaysBundle: [/.*/],
-    onlyBundle: false
+    onlyBundle: false,
   },
-})
+});

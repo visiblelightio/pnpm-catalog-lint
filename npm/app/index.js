@@ -1,22 +1,21 @@
 #!/usr/bin/env node
 
-const { spawnSync } = require('node:child_process')
-const fs = require('node:fs')
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
 
 /**
  * Detects if the system is using musl libc (e.g., Alpine Linux)
  */
 function isMusl(os) {
-  if (os !== 'linux') {
-    return false
+  if (os !== "linux") {
+    return false;
   }
 
   // Check for musl dynamic linker
   try {
-    return fs.existsSync('/lib/ld-musl-x86_64.so.1') ||
-           fs.existsSync('/lib/ld-musl-aarch64.so.1')
+    return fs.existsSync("/lib/ld-musl-x86_64.so.1") || fs.existsSync("/lib/ld-musl-aarch64.so.1");
   } catch (e) {
-    return false
+    return false;
   }
 }
 
@@ -29,27 +28,25 @@ function isMusl(os) {
  * @example "x/xx/node_modules/app-darwin-arm64"
  */
 function getExePath() {
-  const arch = process.arch
-  let os = process.platform
-  let extension = ""
-  if (['win32', 'cygwin'].includes(process.platform)) {
-    os = 'windows'
-    extension = '.exe'
+  const arch = process.arch;
+  let os = process.platform;
+  let extension = "";
+  if (["win32", "cygwin"].includes(process.platform)) {
+    os = "windows";
+    extension = ".exe";
   }
 
-  let npmPackageName = `@visiblelightio/pnpm-catalog-lint-${os}-${arch}`
+  let npmPackageName = `@visiblelightio/pnpm-catalog-lint-${os}-${arch}`;
 
   if (isMusl(os)) {
-    npmPackageName += '-musl'
+    npmPackageName += "-musl";
   }
 
   try {
     // Since the binary will be located inside `node_modules`, we can simply call `require.resolve`
-    return require.resolve(`${npmPackageName}/bin/pnpm-catalog-lint${extension}`)
+    return require.resolve(`${npmPackageName}/bin/pnpm-catalog-lint${extension}`);
   } catch (e) {
-    throw new Error(
-      `Couldn't find application binary inside node_modules for ${npmPackageName}.`
-    )
+    throw new Error(`Couldn't find application binary inside node_modules for ${npmPackageName}.`);
   }
 }
 
@@ -57,16 +54,18 @@ function getExePath() {
  * Runs the application with args using nodejs spawn
  */
 function run() {
-  const args = process.argv.slice(2)
-  const processResult = spawnSync(getExePath(), args, { stdio: 'inherit' })
+  const args = process.argv.slice(2);
+  const processResult = spawnSync(getExePath(), args, { stdio: "inherit" });
 
   if (processResult.error) {
-    console.error(`Failed to execute pnpm-catalog-lint: ${processResult.error.message}`)
-    console.error("Please report this issue: https://github.com/visiblelightio/pnpm-catalog-lint/issues")
-    process.exit(1)
+    console.error(`Failed to execute pnpm-catalog-lint: ${processResult.error.message}`);
+    console.error(
+      "Please report this issue: https://github.com/visiblelightio/pnpm-catalog-lint/issues",
+    );
+    process.exit(1);
   }
 
-  process.exit(processResult.status ?? 0)
+  process.exit(processResult.status ?? 0);
 }
 
-run()
+run();
