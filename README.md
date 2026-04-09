@@ -56,6 +56,7 @@ Dependencies using `workspace:`, `link:`, `file:`, or `git:` protocols are skipp
 A `catalog:` or `catalog:<name>` reference points to an entry that doesn't exist in `pnpm-workspace.yaml`. This will cause `pnpm install` to fail.
 
 Detects three cases:
+
 - Dependency not found in the default catalog
 - Named catalog doesn't exist
 - Dependency not found in the specified named catalog
