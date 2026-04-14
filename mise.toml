@@ -1,4 +1,4 @@
 [tools]
 node = "25.9.0"
 rust = "1.94.1"
-"npm:oxfmt" = "0.44.0"
+"npm:oxfmt" = "0.45.0"
